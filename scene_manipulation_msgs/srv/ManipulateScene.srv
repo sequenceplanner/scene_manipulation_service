@@ -1,0 +1,23 @@
+# Request
+
+# What to do with the frame [update(this will add the frame if it doesn't exist), remove]
+string command
+
+# Name of frame to add to the scene
+string child_frame_id
+
+# Desired frame to put the child frame in
+string parent_frame_id
+
+# child_frame_id expressed in parent_frame_id
+geometry_msgs/Transform transform
+
+# If same_position is true, the position in world will be the same after change of parent
+# If it is true, the transform will be ignored.
+bool same_position_in_world
+
+---
+
+# Reply
+bool success
+string info
