@@ -249,7 +249,7 @@ async fn list_frames_in_dir(path: &str) -> Vec<String> {
             Err(e) => r2r::log_warn!(NODE_ID, "Reading entry failed with '{}'.", e),
         }),
         Err(e) => {
-            println!("{:?}", path);
+            // println!("{:?}", path);
             r2r::log_error!(
                 NODE_ID,
                 "Reading the scenario directory failed with: '{}'. Empty scenario will be launched.",
@@ -311,6 +311,39 @@ async fn scene_manipulation_server(
                         .expect("Could not send service response.");
                     continue;
                 }
+                x if x.starts_with("clone") => {
+                    r2r::log_info!(NODE_ID, "Got 'clone' request: {:?}.", request.message);
+                    let mut do_request = false;
+                    {
+                        println!("{:?}", x.rsplit(":").collect::<Vec<_>>());
+                        if let Some(old_name) = x.rsplit(":").nth(0) {
+                           let new_name = request.message.child_frame_id.clone();
+                            let mut bf = broadcaster_frames.lock().unwrap();
+                            let mut bf2 = buffered_frames.lock().unwrap();
+                            if let Some(old_frame) = bf2.get(old_name) {
+                                let mut new_frame = old_frame.clone();
+                                new_frame.frame_data.child_frame_id = new_name.clone();
+                                // new_frame.frame_data.active = true;
+                                bf.insert(new_name.clone(), new_frame.clone());
+                                bf2.insert(new_name, new_frame.clone());
+                                do_request = true;
+                            }
+                        }
+                    }
+                    if do_request {
+                        let response =
+                            update_frame(&request.message, &broadcaster_frames, &buffered_frames).await;
+                        request
+                            .respond(response)
+                            .expect("Could not send service response.");
+                    } else {
+                        r2r::log_error!(NODE_ID, "Falied to clone frame.");
+                        request
+                            .respond(ManipulateScene::Response::default())
+                            .expect("Falied to clone frame.");
+                    }
+                    continue;
+                }
                 _ => {
                     r2r::log_error!(NODE_ID, "No such command.");
                     continue;
@@ -335,13 +368,13 @@ async fn transform_lookup_server(
             .await
             {
                 Some(transform) => {
-                    r2r::log_info!(
-                        NODE_ID,
-                        "Found transform from '{}' to '{}': {:?}",
-                        &request.message.parent_frame_id,
-                        &request.message.child_frame_id,
-                        transform
-                    );
+                    // r2r::log_info!(
+                    //     NODE_ID,
+                    //     "Found transform from '{}' to '{}': {:?}",
+                    //     &request.message.parent_frame_id,
+                    //     &request.message.child_frame_id,
+                    //     transform
+                    // );
                     let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
                     let now = clock.get_now().unwrap();
                     let time_stamp = r2r::Clock::to_builtin_time(&now);
@@ -394,7 +427,7 @@ fn error_response(msg: &str) -> ManipulateScene::Response {
 
 fn success_response(msg: &str) -> ManipulateScene::Response {
     let info = msg.to_string();
-    r2r::log_info!(NODE_ID, "{}", info);
+    // r2r::log_info!(NODE_ID, "{}", info);
     ManipulateScene::Response {
         success: true,
         info,
@@ -482,7 +515,7 @@ async fn update_frame(
 
         match local_broadcaster_frames.get(&message.child_frame_id) {
             Some(frame) => match frame.frame_data.active {
-                false => match local_buffered_frames.contains_key(&message.parent_frame_id) {
+                true => match local_buffered_frames.contains_key(&message.parent_frame_id) {
                     false => {
                         // log_warn!()
                         add_with_msg_tf(message, broadcaster_frames)
@@ -512,7 +545,7 @@ async fn update_frame(
                         )),
                     },
                 },
-                true => error_response("Can't manipulate_static frames."),
+                false => error_response("Can't manipulate_static frames."),
             },
             None => error_response("Failed to get frame data from broadcaster hashmap."),
         }
@@ -529,7 +562,7 @@ async fn update_frame(
                     }
                 }
                 true => {
-                    std::thread::sleep(std::time::Duration::from_millis(2000));
+                    // std::thread::sleep(std::time::Duration::from_millis(2000));
                     match local_buffered_frames.contains_key(&message.child_frame_id) {
                         false => error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
                         true => inner(message, broadcaster_frames, buffered_frames).await
@@ -560,7 +593,7 @@ async fn remove_frame(
         let mut local_broadcaster_frames = broadcaster_frames.lock().unwrap().clone();
         match local_broadcaster_frames.get(&message.child_frame_id) {
             Some(frame) => match frame.frame_data.active {
-                false => match frame.folder_loaded {
+                true => match frame.folder_loaded {
                     false => match local_broadcaster_frames.remove(&message.child_frame_id) {
                         Some(_) => {
                             *broadcaster_frames.lock().unwrap() = local_broadcaster_frames;
@@ -573,7 +606,7 @@ async fn remove_frame(
                     },
                     true => error_response("Frame is loaded via the folder and not manipulated afterwards. Frame won't be removed.")
                 },
-                true => error_response("Can't manipulate_static frames.")
+                false => error_response("Can't manipulate_static frames.")
             },
             None => error_response("Failed to get frame data from broadcaster hashmap.")
         }
@@ -584,7 +617,7 @@ async fn remove_frame(
             false => match local_broadcaster_frames.contains_key(&message.child_frame_id) {
                 false => error_response("Frame doesn't exist in tf, nor is it published by this broadcaster."),
                 true => {
-                    std::thread::sleep(std::time::Duration::from_millis(2000));
+                    // std::thread::sleep(std::time::Duration::from_millis(2000));
                     match local_buffered_frames.contains_key(&message.child_frame_id) {
                         false => error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
                         true => inner(message, broadcaster_frames)
@@ -1040,7 +1073,7 @@ fn parent_to_world(
                 // let current_parent_2 = current_parent.clone();
                 match frames.get(&current_parent.clone()) {
                     Some(parent) => {
-                        println!("PARENT TO WORLD: {:?}", parent.frame_data.child_frame_id);
+                        // println!("PARENT TO WORLD: {:?}", parent.frame_data.child_frame_id);
                         let a = tf_to_affine(&parent.frame_data.transform);
                         path.push(a.inverse());
                         let p = parent.frame_data.parent_frame_id.clone();
@@ -1089,14 +1122,14 @@ fn world_to_child(
         //     NODE_ID,
         //     "WORLD TO CHILD LOOP."
         // );
-        println!(
-            "WORLD TO CHILD: {:?}",
-            stack.iter().map(|x| x.0.clone()).collect::<Vec<String>>()
-        );
+        // println!(
+        //     "WORLD TO CHILD: {:?}",
+        //     stack.iter().map(|x| x.0.clone()).collect::<Vec<String>>()
+        // );
         match stack.pop() {
             Some((frame, path, chain)) => match frame == child_frame_id {
                 true => {
-                    println!("WORLD TO CHILD PATH: {:?}", path);
+                    // println!("WORLD TO CHILD PATH: {:?}", path);
                     break Some(chain);
                 }
                 false => {
