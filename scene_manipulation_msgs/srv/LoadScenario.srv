@@ -1,0 +1,7 @@
+# Request
+string scenario_path
+
+---
+
+# Reply
+bool success

@@ -16,10 +16,6 @@ colcon build --cmake-args -DCARGO_CLEAN=ON
 ros2 launch scene_manipulation_bringup sms_example.launch.py
 ```
 
-
-<!-- ## Note
-For convenience, define as many frames as possible as `active`. -->
-
 ## Introduction
 
 A critical ROS tool that enables preparation, commissioning and control of intelligent automation systems is `tf`. In short, `tf` is a ROS package that lets the user keep track of multiple coordinate frames over time. It does so by maintaining relationships between coordinate frames in a tree structure buffered in time, and lets the user manipulate transforms between any two coordinate frames at any desired point in time. Usually, a global `tf` tree keeps track of all things in a system, however, in some cases it can be beneficial to have multiple trees to keep track of frames in certain subsystems. 
@@ -105,13 +101,15 @@ Frames are broadcasted from two places: loaded from a folder using `.json` descr
 
 The path of this folder, i.e. where the scenario is loaded from, should be specified when launching the scene manipulation service with the `scenario_path` parameter. There are two options here for convenience. If one wishes not to manipulate the frames manually by adding, changing or removing `.json` files, the more convenient option is to install the scenario directiory when building the package and using `FindPackageShare` to locate the scenario folder. Otherwise, it is more convenient to specify the absolute path to such a scenario folder. Look at the `sms_example.launch.py` in the `scene_manipulation_bringup` package for examples.
 
-The scene manipulation service node can also be launched without a provided `scenario_path` parameter. Then the `load_scenario` service can be used to forward such a path and point to a folder during runtime. This can also be used to re-load or change the scenario during runtime, though cases where that is needed are rare.
+The scene manipulation service node can also be launched without a provided `scenario_path` parameter. Then the `load_scenario` service can be used to forward such a path and point to a folder during runtime, using the `LoadScenario` service message. This can also be used to re-load or change the scenario during runtime, though cases where that is needed are rare.
 
 ## Looking up transforms
 
 As the scene manipulation service node maintains its own buffer, it is easy to lookup relationships between frames stored in that buffer. This is offered with the `lookup_transform` service using the `LookupTransform` service message. Asking for all transforms currently maintained in the local buffer is possible through the `get_all_transforms` service using the `GetAllTransforms` service message.
 
-## Scene manipulation
+## Scene manipulation service
+
+The scene manipulation service allows removing, adding, updating and cloning frames in a scenario. It is done throught the `manipulate_scene` service using the `ManipulateScene` service message. The flowchart below depicts how the manipulation is performed and what can happen. 
 
 ![Alt text](/description/sms_chart.png "")
 

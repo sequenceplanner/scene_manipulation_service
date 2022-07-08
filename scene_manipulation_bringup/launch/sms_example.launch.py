@@ -22,7 +22,7 @@ def generate_launch_description():
         executable="sms",
         namespace="",
         output="screen",
-        parameters=[parameters],
+        parameters=[],
         remappings=[("/tf", "tf"), ("/tf_static", "tf_static")],
         emulate_tty=True,
     )

@@ -2,7 +2,7 @@ use futures::{stream::Stream, StreamExt};
 use glam::{DAffine3, DQuat, DVec3};
 use r2r::builtin_interfaces::msg::Time;
 use r2r::geometry_msgs::msg::{Quaternion, Transform, TransformStamped, Vector3};
-use r2r::scene_manipulation_msgs::srv::{LookupTransform, ManipulateScene};
+use r2r::scene_manipulation_msgs::srv::{LookupTransform, ManipulateScene, LoadScenario};
 use r2r::std_msgs::msg::Header;
 use r2r::tf2_msgs::msg::TFMessage;
 use r2r::{ParameterValue, QosProfile, ServiceRequest, log_warn};
@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let path = Arc::new(Mutex::new(path_param.clone()));
-    let scenario = list_frames_in_dir(&path_param).await;
+    let scenario = list_frames_in_dir(&path_param, true).await;
 
     // TODO: offer a service to load or re-load the scenario, i.e. if sms was launched without the specified folder
     // TODO: offer a service to get all frames from tf
@@ -120,6 +120,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // offer the transform lookup service
     let transform_lookup_service =
         node.create_service::<LookupTransform::Service>("lookup_transform")?;
+
+    // offer the scenario loading/reloading service
+    let load_scenario_service =
+        node.create_service::<LoadScenario::Service>("load_scenario")?;
 
     // occasionally look into the folder specified by the path to see if there are changes
     let reload_timer =
@@ -200,6 +204,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
     });
 
+    // offer a service for clients that want to load/reload the scenario
+    let broadcasted_frames_clone_5 = broadcasted_frames.clone();
+    tokio::task::spawn(async move {
+        let result =
+            load_scenario_server(load_scenario_service, &broadcasted_frames_clone_5).await;
+        match result {
+            Ok(()) => r2r::log_info!(NODE_ID, "Load Scenario Service call succeeded."),
+            Err(e) => r2r::log_error!(NODE_ID, "Load Scenario Service call failed with: {}.", e),
+        };
+    });
+
     // spawn a tokio task to listen to the active frames and add them to the buffer
     let buffered_frames_clone_2 = buffered_frames.clone();
     tokio::task::spawn(async move {
@@ -243,7 +258,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn list_frames_in_dir(path: &str) -> Vec<String> {
+async fn list_frames_in_dir(path: &str, launch: bool) -> Vec<String> {
     let mut scenario = vec![];
     match fs::read_dir(path) {
         Ok(dir) => dir.for_each(|file| match file {
@@ -254,12 +269,20 @@ async fn list_frames_in_dir(path: &str) -> Vec<String> {
             Err(e) => r2r::log_warn!(NODE_ID, "Reading entry failed with '{}'.", e),
         }),
         Err(e) => {
-            // println!("{:?}", path);
-            r2r::log_error!(
-                NODE_ID,
-                "Reading the scenario directory failed with: '{}'. Empty scenario will be launched.",
-                e
-            );
+            match launch {
+                true => {
+                    r2r::log_warn!(
+                        NODE_ID,
+                        "Reading the scenario directory failed with: '{}'.",
+                        e
+                    );
+                    r2r::log_warn!(
+                        NODE_ID,
+                        "Empty scenario is launched."
+                    );
+                },
+                false => ()
+            }
         }
     }
     scenario
@@ -335,6 +358,31 @@ async fn scene_manipulation_server(
         }
     }
 }
+
+async fn load_scenario_server(
+    mut service: impl Stream<Item = ServiceRequest<LoadScenario::Service>> + Unpin,
+    broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    loop {
+        match service.next().await {
+            Some(request) => {
+                let scenario = list_frames_in_dir(&request.message.scenario_path, true).await;
+            
+                let loaded = load_scenario(&scenario).await;
+                r2r::log_info!(
+                    NODE_ID,
+                    "Initial frames added to the scene: '{:?}'.",
+                    loaded.keys()
+                );
+                let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
+                loaded.iter().map(|x| local_broadcasted_frames.insert(x.0.clone(), x.1.clone()));
+                *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
+            },
+            None => ()
+        }
+    }
+}
+
 
 async fn transform_lookup_server(
     mut service: impl Stream<Item = ServiceRequest<LookupTransform::Service>> + Unpin,
@@ -812,7 +860,7 @@ async fn folder_manupulation_callback(
     loop {
         // let mut to_be_added = vec![];
         let path = path.lock().unwrap().clone();
-        let dir_frames = list_frames_in_dir(&path).await.clone();
+        let dir_frames = list_frames_in_dir(&path, false).await.clone();
 
         // differentiate between frames loaded from folder and through services
         // for example, if we add a frame through the service call, it will be
