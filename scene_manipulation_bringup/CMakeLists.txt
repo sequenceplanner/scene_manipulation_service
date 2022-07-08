@@ -4,7 +4,8 @@ project(scene_manipulation_bringup)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY launch config
+# if using option 1, the scenatio folder has to be copied to the share folder
+install(DIRECTORY launch config scenario_1
  DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)

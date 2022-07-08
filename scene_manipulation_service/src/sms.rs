@@ -18,6 +18,7 @@ pub static STATIC_BROADCAST_RATE: u64 = 1000;
 pub static ACTIVE_BROADCAST_RATE: u64 = 100;
 pub static BUFFER_MAINTAIN_RATE: u64 = 100;
 pub static ACTIVE_FRAME_LIFETIME: i32 = 3; //seconds
+pub static STATIC_FRAME_LIFETIME: i32 = 10; //seconds
 pub static MAX_TRANSFORM_CHAIN: u64 = 100;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -73,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = Arc::new(Mutex::new(path_param.clone()));
     let scenario = list_frames_in_dir(&path_param).await;
 
-    // TODO: offer a service to load the scenario, i.e. if sms was launched without the specified folder
+    // TODO: offer a service to load or re-load the scenario, i.e. if sms was launched without the specified folder
     // TODO: offer a service to get all frames from tf
 
     let init_loaded = load_scenario(&scenario).await;
@@ -84,7 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // frames that are published by this broadcaster
-    let broadcaster_frames = Arc::new(Mutex::new(init_loaded));
+    let broadcasted_frames = Arc::new(Mutex::new(init_loaded));
 
     // frames that exist on the tf and tf_static topic, i.e. this is a local tf buffer
     let buffered_frames = Arc::new(Mutex::new(HashMap::<String, ExtendedFrameData>::new()));
@@ -92,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // listen to the active frames on the tf topic to see if a frame exists before broadcasting it
     let active_tf_listener = node.subscribe::<TFMessage>("tf", QosProfile::default())?;
 
-    // listen to the active frames on the tf topic to see if a frame exists before broadcasting it
+    // listen to the active frames on the static tf topic to see if a frame exists before broadcasting it
     let static_tf_listener = node.subscribe::<TFMessage>(
         "tf_static",
         QosProfile::transient_local(QosProfile::default()),
@@ -112,9 +113,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let active_frame_broadcaster = node
         .create_publisher::<TFMessage>("tf", QosProfile::transient_local(QosProfile::default()))?;
 
+    // offer the scene manipulation service
     let scene_manipulation_service =
         node.create_service::<ManipulateScene::Service>("manipulate_scene")?;
 
+    // offer the transform lookup service
     let transform_lookup_service =
         node.create_service::<LookupTransform::Service>("lookup_transform")?;
 
@@ -123,12 +126,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         node.create_wall_timer(std::time::Duration::from_millis(FOLDER_RELOAD_SCENE_RATE))?;
 
     // spawn a tokio task to handle publishing static frames
-    let broadcaster_frames_clone_1 = broadcaster_frames.clone();
+    let broadcasted_frames_clone_1 = broadcasted_frames.clone();
     tokio::task::spawn(async move {
         match static_frame_broadcaster_callback(
             static_frame_broadcaster,
             static_pub_timer,
-            &broadcaster_frames_clone_1,
+            &broadcasted_frames_clone_1,
         )
         .await
         {
@@ -138,12 +141,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // spawn a tokio task to handle publishing active frames
-    let broadcaster_frames_clone_2 = broadcaster_frames.clone();
+    let broadcasted_frames_clone_2 = broadcasted_frames.clone();
     tokio::task::spawn(async move {
         match active_frame_broadcaster_callback(
             active_frame_broadcaster,
             active_pub_timer,
-            &broadcaster_frames_clone_2,
+            &broadcasted_frames_clone_2,
         )
         .await
         {
@@ -153,10 +156,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // spawn a tokio task to handle reloading the scene when a new frame is to be added manually
-    let broadcaster_frames_clone_3 = broadcaster_frames.clone();
+    // actually, the folder callback should always read the folder and not only when there is a change
+    let broadcasted_frames_clone_3 = broadcasted_frames.clone();
     let path_clone_1 = path.clone();
     tokio::task::spawn(async move {
-        match folder_manupulation_callback(reload_timer, &broadcaster_frames_clone_3, &path_clone_1)
+        match folder_manupulation_callback(reload_timer, &broadcasted_frames_clone_3, &path_clone_1)
             .await
         {
             Ok(()) => (),
@@ -164,13 +168,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
     });
 
-    // offer a service to manipulate the scene. This means adding (loading), updating, and removing frames through a service call.
-    let broadcaster_frames_clone_4 = broadcaster_frames.clone();
+    // offer a service to manipulate the scene
+    let broadcasted_frames_clone_4 = broadcasted_frames.clone();
     let buffered_frames_clone_1 = buffered_frames.clone();
     tokio::task::spawn(async move {
         let result = scene_manipulation_server(
             scene_manipulation_service,
-            &broadcaster_frames_clone_4,
+            &broadcasted_frames_clone_4,
             &buffered_frames_clone_1,
         )
         .await;
@@ -214,6 +218,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
     });
 
+    // frequency of how often to refresh (add or remove) frames to the local buffer
     let buffer_maintain_timer =
         node.create_wall_timer(std::time::Duration::from_millis(BUFFER_MAINTAIN_RATE))?;
 
@@ -285,9 +290,10 @@ async fn load_scenario(scenario: &Vec<String>) -> HashMap<String, ExtendedFrameD
     frame_datas
 }
 
+// update, remove, clone
 async fn scene_manipulation_server(
     mut service: impl Stream<Item = ServiceRequest<ManipulateScene::Service>> + Unpin,
-    broadcaster_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
+    broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
@@ -296,7 +302,7 @@ async fn scene_manipulation_server(
                 "update" => {
                     r2r::log_info!(NODE_ID, "Got 'update' request: {:?}.", request.message);
                     let response =
-                        update_frame(&request.message, &broadcaster_frames, &buffered_frames).await;
+                        update_frame(&request.message, &broadcasted_frames, &buffered_frames).await;
                     request
                         .respond(response)
                         .expect("Could not send service response.");
@@ -305,45 +311,21 @@ async fn scene_manipulation_server(
                 "remove" => {
                     r2r::log_info!(NODE_ID, "Got 'remove' request: {:?}.", request.message);
                     let response =
-                        remove_frame(&request.message, &broadcaster_frames, &buffered_frames).await;
+                        remove_frame(&request.message, &broadcasted_frames, &buffered_frames).await;
                     request
                         .respond(response)
                         .expect("Could not send service response.");
                     continue;
                 }
-                x if x.starts_with("clone") => {
-                    r2r::log_info!(NODE_ID, "Got 'clone' request: {:?}.", request.message);
-                    let mut do_request = false;
-                    {
-                        println!("{:?}", x.rsplit(":").collect::<Vec<_>>());
-                        if let Some(old_name) = x.rsplit(":").nth(0) {
-                           let new_name = request.message.child_frame_id.clone();
-                            let mut bf = broadcaster_frames.lock().unwrap();
-                            let mut bf2 = buffered_frames.lock().unwrap();
-                            if let Some(old_frame) = bf2.get(old_name) {
-                                let mut new_frame = old_frame.clone();
-                                new_frame.frame_data.child_frame_id = new_name.clone();
-                                // new_frame.frame_data.active = true;
-                                bf.insert(new_name.clone(), new_frame.clone());
-                                bf2.insert(new_name, new_frame.clone());
-                                do_request = true;
-                            }
-                        }
-                    }
-                    if do_request {
-                        let response =
-                            update_frame(&request.message, &broadcaster_frames, &buffered_frames).await;
-                        request
-                            .respond(response)
-                            .expect("Could not send service response.");
-                    } else {
-                        r2r::log_error!(NODE_ID, "Falied to clone frame.");
-                        request
-                            .respond(ManipulateScene::Response::default())
-                            .expect("Falied to clone frame.");
-                    }
-                    continue;
-                }
+                // "clone" => {
+                //     r2r::log_info!(NODE_ID, "Got 'clone' request: {:?}.", request.message);
+                //     let response =
+                //         clone_frame(&request.message, &broadcasted_frames, &buffered_frames).await;
+                //     request
+                //         .respond(response)
+                //         .expect("Could not send service response.");
+                //     continue;
+                // }
                 _ => {
                     r2r::log_error!(NODE_ID, "No such command.");
                     continue;
@@ -436,11 +418,11 @@ fn success_response(msg: &str) -> ManipulateScene::Response {
 
 async fn update_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
-    broadcaster_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
+    broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
 ) -> ManipulateScene::Response {
     let local_buffered_frames = buffered_frames.lock().unwrap().clone();
-    let local_broadcaster_frames = broadcaster_frames.lock().unwrap().clone();
+    let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
 
     fn make_extended_frame_data(
         message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
@@ -462,14 +444,14 @@ async fn update_frame(
 
     fn add_with_msg_tf(
         message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
-        broadcaster_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
+        broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
     ) -> ManipulateScene::Response {
-        let mut local_broadcaster_frames = broadcaster_frames.lock().unwrap().clone();
-        local_broadcaster_frames.insert(
+        let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
+        local_broadcasted_frames.insert(
             message.child_frame_id.clone(),
             make_extended_frame_data(message),
         );
-        *broadcaster_frames.lock().unwrap() = local_broadcaster_frames;
+        *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
         success_response(&format!(
             "Frame '{}' added to the scene.",
             message.child_frame_id
@@ -478,14 +460,14 @@ async fn update_frame(
 
     fn add_with_lookup_tf(
         message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
-        broadcaster_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
+        broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
         transform: Transform,
     ) -> ManipulateScene::Response {
-        let mut local_broadcaster_frames = broadcaster_frames.lock().unwrap().clone();
+        let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
         let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
         let now = clock.get_now().unwrap();
         let time_stamp = r2r::Clock::to_builtin_time(&now);
-        local_broadcaster_frames.insert(
+        local_broadcasted_frames.insert(
             message.child_frame_id.clone(),
             ExtendedFrameData {
                 frame_data: FrameData {
@@ -498,7 +480,7 @@ async fn update_frame(
                 time_stamp,
             },
         );
-        *broadcaster_frames.lock().unwrap() = local_broadcaster_frames;
+        *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
         success_response(&format!(
             "Frame '{}' added to the scene.",
             message.child_frame_id
@@ -507,25 +489,25 @@ async fn update_frame(
 
     async fn inner(
         message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
-        broadcaster_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
+        broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
         buffered_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
     ) -> ManipulateScene::Response {
-        let local_broadcaster_frames = broadcaster_frames.lock().unwrap().clone();
+        let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
         let local_buffered_frames = buffered_frames.lock().unwrap().clone();
 
-        match local_broadcaster_frames.get(&message.child_frame_id) {
+        match local_broadcasted_frames.get(&message.child_frame_id) {
             Some(frame) => match frame.frame_data.active {
                 true => match local_buffered_frames.contains_key(&message.parent_frame_id) {
                     false => {
                         // log_warn!()
-                        add_with_msg_tf(message, broadcaster_frames)
+                        add_with_msg_tf(message, broadcasted_frames)
                     }, //add warning
                     true => match check_would_produce_cycle(
                         &make_extended_frame_data(&message),
                         &local_buffered_frames,
                     ) {
                         (false, _) => match message.same_position_in_world {
-                            false => add_with_msg_tf(message, broadcaster_frames),
+                            false => add_with_msg_tf(message, broadcasted_frames),
                             true => match lookup_transform(
                                 &message.parent_frame_id,
                                 &message.child_frame_id,
@@ -535,7 +517,7 @@ async fn update_frame(
                             {
                                 None => error_response("Frailed to lookup transform."),
                                 Some(transform) => {
-                                    add_with_lookup_tf(message, broadcaster_frames, transform)
+                                    add_with_lookup_tf(message, broadcasted_frames, transform)
                                 }
                             },
                         },
@@ -553,11 +535,11 @@ async fn update_frame(
 
     match &message.child_frame_id == "world" {
         false => match local_buffered_frames.contains_key(&message.child_frame_id) {
-            false => match local_broadcaster_frames.contains_key(&message.child_frame_id) {
+            false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => match local_buffered_frames.contains_key(&message.parent_frame_id) {
-                    false => add_with_msg_tf(message, broadcaster_frames), //add warning
+                    false => add_with_msg_tf(message, broadcasted_frames), //add warning
                     true => match check_would_produce_cycle(&make_extended_frame_data(&message), &local_buffered_frames) {
-                        (false, _) => add_with_msg_tf(message, broadcaster_frames),
+                        (false, _) => add_with_msg_tf(message, broadcasted_frames),
                         (true, cause) => error_response(&format!("Adding frame '{}' would produce a cycle. Not added", cause))
                     }
                 }
@@ -565,13 +547,13 @@ async fn update_frame(
                     // std::thread::sleep(std::time::Duration::from_millis(2000));
                     match local_buffered_frames.contains_key(&message.child_frame_id) {
                         false => error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
-                        true => inner(message, broadcaster_frames, buffered_frames).await
+                        true => inner(message, broadcasted_frames, buffered_frames).await
                     }
                 }
             },
-            true => match local_broadcaster_frames.contains_key(&message.child_frame_id) {
+            true => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => error_response("Frame exists in the tf, but it can't be updated since it is not published by this broadcaster."),
-                true => inner(message, broadcaster_frames, buffered_frames).await
+                true => inner(message, broadcasted_frames, buffered_frames).await
             }
         },
         true => error_response("Frame 'world' is reserved as the universal tree root."),
@@ -580,23 +562,23 @@ async fn update_frame(
 
 async fn remove_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
-    broadcaster_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
+    broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
 ) -> ManipulateScene::Response {
     let local_buffered_frames = buffered_frames.lock().unwrap().clone();
-    let local_broadcaster_frames = broadcaster_frames.lock().unwrap().clone();
+    let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
 
     fn inner(
         message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
-        broadcaster_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
+        broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
     ) -> ManipulateScene::Response {
-        let mut local_broadcaster_frames = broadcaster_frames.lock().unwrap().clone();
-        match local_broadcaster_frames.get(&message.child_frame_id) {
+        let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
+        match local_broadcasted_frames.get(&message.child_frame_id) {
             Some(frame) => match frame.frame_data.active {
                 true => match frame.folder_loaded {
-                    false => match local_broadcaster_frames.remove(&message.child_frame_id) {
+                    false => match local_broadcasted_frames.remove(&message.child_frame_id) {
                         Some(_) => {
-                            *broadcaster_frames.lock().unwrap() = local_broadcaster_frames;
+                            *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
                             success_response(&format!("Frame '{}' removed from the scene.", message.child_frame_id))
                         }
                         None => error_response(&format!(
@@ -614,24 +596,112 @@ async fn remove_frame(
 
     match &message.child_frame_id == "world" {
         false => match local_buffered_frames.contains_key(&message.child_frame_id) {
-            false => match local_broadcaster_frames.contains_key(&message.child_frame_id) {
+            false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => error_response("Frame doesn't exist in tf, nor is it published by this broadcaster."),
                 true => {
                     // std::thread::sleep(std::time::Duration::from_millis(2000));
                     match local_buffered_frames.contains_key(&message.child_frame_id) {
                         false => error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
-                        true => inner(message, broadcaster_frames)
+                        true => inner(message, broadcasted_frames)
                     }
                 }
             },
-            true => match local_broadcaster_frames.contains_key(&message.child_frame_id) {
+            true => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => error_response("Frame exists in the tf, but it can't be removed since it is not published by this broadcaster."),
-                true => inner(message, broadcaster_frames)
+                true => inner(message, broadcasted_frames)
             }
         },
         true => error_response("Frame 'world' is reserved as the universal tree root."),
     }
 }
+
+
+// x if x.starts_with("clone") => {
+//     r2r::log_info!(NODE_ID, "Got 'clone' request: {:?}.", request.message);
+//     let mut do_request = false;
+//     {
+//         println!("{:?}", x.rsplit(":").collect::<Vec<_>>());
+//         if let Some(old_name) = x.rsplit(":").nth(0) {
+//            let new_name = request.message.child_frame_id.clone();
+//             let mut bf = broadcasted_frames.lock().unwrap();
+//             let mut bf2 = buffered_frames.lock().unwrap();
+//             if let Some(old_frame) = bf2.get(old_name) {
+//                 let mut new_frame = old_frame.clone();
+//                 new_frame.frame_data.child_frame_id = new_name.clone();
+//                 // new_frame.frame_data.active = true;
+//                 bf.insert(new_name.clone(), new_frame.clone());
+//                 bf2.insert(new_name, new_frame.clone());
+//                 do_request = true;
+//             }
+//         }
+//     }
+//     if do_request {
+//         let response =
+//             update_frame(&request.message, &broadcasted_frames, &buffered_frames).await;
+//         request
+//             .respond(response)
+//             .expect("Could not send service response.");
+//     } else {
+//         r2r::log_error!(NODE_ID, "Falied to clone frame.");
+//         request
+//             .respond(ManipulateScene::Response::default())
+//             .expect("Falied to clone frame.");
+//     }
+//     continue;
+// }
+
+// async fn clone_frame(
+//     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
+//     broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
+//     buffered_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
+// ) -> ManipulateScene::Response {
+//     let local_buffered_frames = buffered_frames.lock().unwrap().clone();
+//     let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
+
+//     fn inner(
+//         message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
+//         broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
+//     ) -> ManipulateScene::Response {
+//         let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
+//         match local_broadcasted_frames.get(&message.child_frame_id) {
+//             Some(frame) => match frame.frame_data.active {
+//                 true => 
+//                 true => match frame.folder_loaded {
+//                     false => match local_broadcasted_frames.remove(&message.child_frame_id) {
+//                         Some(_) => {
+//                             *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
+//                             success_response(&format!("Frame '{}' removed from the scene.", message.child_frame_id))
+//                         }
+//                         None => error_response(&format!(
+//                             "Failed to remove frame '{}' from the scene.",
+//                             message.child_frame_id
+//                         ))
+//                     },
+//                     true => error_response("Frame is loaded via the folder and not manipulated afterwards. Frame won't be removed.")
+//                 },
+//                 false => error_response("Can't manipulate_static frames.")
+//             },
+//             None => error_response("Failed to get frame data from broadcaster hashmap.")
+//         }
+//     }
+
+//     match &message.child_frame_id == "world" {
+//         false => match local_buffered_frames.contains_key(&message.child_frame_id) {
+//             false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
+//                 false => error_response("Frame doesn't exist in tf, nor is it published by this broadcaster."),
+//                 true => {
+//                     tokio::time::sleep(std::time::Duration::from_millis(2000)); // this has to be tested
+//                     match local_buffered_frames.contains_key(&message.child_frame_id) {
+//                         false => error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
+//                         true => inner(message, broadcasted_frames)
+//                     }
+//                 }
+//             },
+//             true => inner(message, broadcasted_frames)
+//         },
+//         true => error_response("Frame 'world' is reserved as the universal tree root."),
+//     }
+// }
 
 // broadcast static frames
 async fn static_frame_broadcaster_callback(

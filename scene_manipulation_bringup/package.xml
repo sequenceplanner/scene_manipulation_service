@@ -4,7 +4,7 @@
   <name>scene_manipulation_bringup</name>
   <version>0.0.1</version>
   <description>
-    Bringup package for the Volvo Rita project.
+    Example bringup package for the scene manipulation service.
   </description>
 
   <author>Endre Erős</author>

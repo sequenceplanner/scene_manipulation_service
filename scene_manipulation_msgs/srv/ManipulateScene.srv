@@ -1,6 +1,6 @@
 # Request
 
-# What to do with the frame [update(this will add the frame if it doesn't exist), remove]
+# What to do with the frame [update(this will add the frame if it doesn't exist), remove, clone]
 string command
 
 # Name of frame to add to the scene
@@ -8,6 +8,12 @@ string child_frame_id
 
 # Desired frame to put the child frame in
 string parent_frame_id
+
+# New name of the cloned child frame
+string clone_frame_id
+
+# New name of the frame where the cloned child frame should be put
+string clone_parent_frame_id
 
 # child_frame_id expressed in parent_frame_id
 geometry_msgs/Transform transform
