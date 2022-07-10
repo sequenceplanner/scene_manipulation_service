@@ -2,10 +2,12 @@ use futures::{stream::Stream, StreamExt};
 use glam::{DAffine3, DQuat, DVec3};
 use r2r::builtin_interfaces::msg::Time;
 use r2r::geometry_msgs::msg::{Quaternion, Transform, TransformStamped, Vector3};
-use r2r::scene_manipulation_msgs::srv::{LookupTransform, ManipulateScene, LoadScenario};
+use r2r::scene_manipulation_msgs::srv::{
+    GetAllTransforms, LoadScenario, LookupTransform, ManipulateScene,
+};
 use r2r::std_msgs::msg::Header;
 use r2r::tf2_msgs::msg::TFMessage;
-use r2r::{ParameterValue, QosProfile, ServiceRequest, log_warn};
+use r2r::{log_warn, ParameterValue, QosProfile, ServiceRequest};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
@@ -74,9 +76,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = Arc::new(Mutex::new(path_param.clone()));
     let scenario = list_frames_in_dir(&path_param, true).await;
 
-    // TODO: offer a service to load or re-load the scenario, i.e. if sms was launched without the specified folder
-    // TODO: offer a service to get all frames from tf
-
     let init_loaded = load_scenario(&scenario).await;
     r2r::log_info!(
         NODE_ID,
@@ -122,8 +121,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         node.create_service::<LookupTransform::Service>("lookup_transform")?;
 
     // offer the scenario loading/reloading service
-    let load_scenario_service =
-        node.create_service::<LoadScenario::Service>("load_scenario")?;
+    let load_scenario_service = node.create_service::<LoadScenario::Service>("load_scenario")?;
+
+    // offer a service to get all frames from tf (local buffer)
+    let get_all_transforms_service =
+        node.create_service::<GetAllTransforms::Service>("get_all_transforms")?;
 
     // occasionally look into the folder specified by the path to see if there are changes
     let reload_timer =
@@ -207,8 +209,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // offer a service for clients that want to load/reload the scenario
     let broadcasted_frames_clone_5 = broadcasted_frames.clone();
     tokio::task::spawn(async move {
-        let result =
-            load_scenario_server(load_scenario_service, &broadcasted_frames_clone_5).await;
+        let result = load_scenario_server(load_scenario_service, &broadcasted_frames_clone_5).await;
         match result {
             Ok(()) => r2r::log_info!(NODE_ID, "Load Scenario Service call succeeded."),
             Err(e) => r2r::log_error!(NODE_ID, "Load Scenario Service call failed with: {}.", e),
@@ -246,6 +247,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
     });
 
+    // offer a service for clients that want to get all transforms from the local buffer and their names
+    // let buffered_frames_clone_4 = buffered_frames.clone();
+    tokio::task::spawn(async move {
+        let result = get_all_transforms_server(get_all_transforms_service, &buffered_frames.clone()).await;
+        match result {
+            Ok(()) => r2r::log_info!(NODE_ID, "Get All Frames Service call succeeded."),
+            Err(e) => r2r::log_error!(NODE_ID, "Get All Frames Service call failed with: {}.", e),
+        };
+    });
+
     // keep the node alive
     let handle = std::thread::spawn(move || loop {
         node.spin_once(std::time::Duration::from_millis(1000));
@@ -268,22 +279,17 @@ async fn list_frames_in_dir(path: &str, launch: bool) -> Vec<String> {
             },
             Err(e) => r2r::log_warn!(NODE_ID, "Reading entry failed with '{}'.", e),
         }),
-        Err(e) => {
-            match launch {
-                true => {
-                    r2r::log_warn!(
-                        NODE_ID,
-                        "Reading the scenario directory failed with: '{}'.",
-                        e
-                    );
-                    r2r::log_warn!(
-                        NODE_ID,
-                        "Empty scenario is launched."
-                    );
-                },
-                false => ()
+        Err(e) => match launch {
+            true => {
+                r2r::log_warn!(
+                    NODE_ID,
+                    "Reading the scenario directory failed with: '{}'.",
+                    e
+                );
+                r2r::log_warn!(NODE_ID, "Empty scenario is launched.");
             }
-        }
+            false => (),
+        },
     }
     scenario
 }
@@ -367,7 +373,7 @@ async fn load_scenario_server(
         match service.next().await {
             Some(request) => {
                 let scenario = list_frames_in_dir(&request.message.scenario_path, true).await;
-            
+
                 let loaded = load_scenario(&scenario).await;
                 r2r::log_info!(
                     NODE_ID,
@@ -375,14 +381,15 @@ async fn load_scenario_server(
                     loaded.keys()
                 );
                 let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
-                loaded.iter().map(|x| local_broadcasted_frames.insert(x.0.clone(), x.1.clone()));
+                loaded
+                    .iter()
+                    .map(|x| local_broadcasted_frames.insert(x.0.clone(), x.1.clone()));
                 *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
-            },
-            None => ()
+            }
+            None => (),
         }
     }
 }
-
 
 async fn transform_lookup_server(
     mut service: impl Stream<Item = ServiceRequest<LookupTransform::Service>> + Unpin,
@@ -441,6 +448,43 @@ async fn transform_lookup_server(
                     continue;
                 }
             },
+            None => {}
+        }
+    }
+}
+
+async fn get_all_transforms_server(
+    mut service: impl Stream<Item = ServiceRequest<GetAllTransforms::Service>> + Unpin,
+    buffered_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    loop {
+        match service.next().await {
+            Some(request) => {
+                let frames_local = buffered_frames.lock().unwrap().clone();
+                let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
+                let now = clock.get_now().unwrap();
+                let time_stamp = r2r::Clock::to_builtin_time(&now);
+                let response = GetAllTransforms::Response {
+                    success: true,
+                    names: frames_local.iter().map(|x| x.0.to_string()).collect(),
+                    transforms: frames_local.iter().map(|x| 
+                        TransformStamped {
+                            header: Header {
+                                stamp: time_stamp.clone(),
+                                frame_id: x.1.frame_data.parent_frame_id.clone(),
+                            },
+                            child_frame_id: x.1.frame_data.child_frame_id.clone(),
+                            transform: x.1.frame_data.transform.clone(),
+                        }
+                    ).collect(),
+                    
+                    
+                };
+                request
+                    .respond(response)
+                    .expect("Could not send service response.");
+                continue;
+            }
             None => {}
         }
     }
@@ -549,7 +593,7 @@ async fn update_frame(
                     false => {
                         // log_warn!()
                         add_with_msg_tf(message, broadcasted_frames)
-                    }, //add warning
+                    } //add warning
                     true => match check_would_produce_cycle(
                         &make_extended_frame_data(&message),
                         &local_buffered_frames,
@@ -663,7 +707,6 @@ async fn remove_frame(
     }
 }
 
-
 // x if x.starts_with("clone") => {
 //     r2r::log_info!(NODE_ID, "Got 'clone' request: {:?}.", request.message);
 //     let mut do_request = false;
@@ -713,7 +756,7 @@ async fn remove_frame(
 //         let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
 //         match local_broadcasted_frames.get(&message.child_frame_id) {
 //             Some(frame) => match frame.frame_data.active {
-//                 true => 
+//                 true =>
 //                 true => match frame.folder_loaded {
 //                     false => match local_broadcasted_frames.remove(&message.child_frame_id) {
 //                         Some(_) => {
@@ -1056,8 +1099,9 @@ async fn maintain_buffer(
         let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
         let now = clock.get_now().unwrap();
         let current_time = r2r::Clock::to_builtin_time(&now);
-        frames_local.iter().for_each(|(k, v)| {
-            match v.folder_loaded {
+        frames_local
+            .iter()
+            .for_each(|(k, v)| match v.folder_loaded {
                 false => {
                     match v.frame_data.active {
                         true => match current_time.sec > v.time_stamp.sec + ACTIVE_FRAME_LIFETIME {
@@ -1069,19 +1113,16 @@ async fn maintain_buffer(
                         false => (),
                     };
                 }
-                true => {
-                    match v.frame_data.active {
-                        true => match current_time.sec > v.time_stamp.sec + ACTIVE_FRAME_LIFETIME {
-                            true => {
-                                frames_local_reduced.remove(k);
-                            }
-                            false => (),
-                        },
-                        false => ()
-                    }
-                }
-            }
-        });
+                true => match v.frame_data.active {
+                    true => match current_time.sec > v.time_stamp.sec + ACTIVE_FRAME_LIFETIME {
+                        true => {
+                            frames_local_reduced.remove(k);
+                        }
+                        false => (),
+                    },
+                    false => (),
+                },
+            });
         *frames.lock().unwrap() = frames_local_reduced;
         timer.tick().await?;
     }

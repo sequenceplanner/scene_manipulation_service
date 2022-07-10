@@ -27,6 +27,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ManipulateScene.srv"
   "srv/LookupTransform.srv"
   "srv/LoadScenario.srv"
+  "srv/GetAllTransforms.srv"
   DEPENDENCIES
     builtin_interfaces
     geometry_msgs
