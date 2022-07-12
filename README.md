@@ -140,6 +140,10 @@ The flowcharts below depict how the manipulation is performed and what can happe
 
 ![Alt text](/description/reparent_chart.png "")
 
+## clone
+
+![Alt text](/description/clone_chart.png "")
+
 ## Acknowledgements:
 Christian Larsen (sms concept) - Fraunhofer Chalmers Centre\
 Martin Dahl (r2r) - Chalmers University of Technology\

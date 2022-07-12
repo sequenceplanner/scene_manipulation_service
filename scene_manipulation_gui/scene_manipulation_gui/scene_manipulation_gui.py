@@ -32,6 +32,7 @@ class Callbacks:
     trigger_remove_frame = None
     trigger_rename_frame = None
     trigger_reparent_frame = None
+    trigger_clone_frame = None
 
 class Ros2Node(Node, Callbacks):
     def __init__(self):
@@ -43,6 +44,7 @@ class Ros2Node(Node, Callbacks):
         Callbacks.trigger_remove_frame = self.trigger_remove_frame
         Callbacks.trigger_rename_frame = self.trigger_rename_frame
         Callbacks.trigger_reparent_frame = self.trigger_reparent_frame
+        Callbacks.trigger_clone_frame = self.trigger_clone_frame
 
         self.tf_buffer = tf2_ros.Buffer()
         self.lf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
@@ -172,6 +174,16 @@ class Ros2Node(Node, Callbacks):
         )
         Callbacks.information = str(response.success) + ": " + response.info
 
+    def trigger_clone_frame(self):
+        response = self.manipulate_scene(
+            "clone",
+            Callbacks.child,
+            Callbacks.parent,
+            Callbacks.new_id,
+            Callbacks.transform.transform,
+        )
+        Callbacks.information = str(response.success) + ": " + response.info
+
     def tf_lookup(self, parent, child):
         self.tf_lookup_request.parent_frame_id = parent
         self.tf_lookup_request.child_frame_id = child
@@ -202,6 +214,7 @@ class Window(QWidget, Callbacks):
         grid.addWidget(self.make_remove_box())
         grid.addWidget(self.make_rename_box())
         grid.addWidget(self.make_reparent_box())
+        grid.addWidget(self.make_clone_box())
         grid.addWidget(self.make_information_box())
         self.setLayout(grid)
         self.setWindowTitle("Scene Manipulateion GUI")
@@ -397,6 +410,58 @@ class Window(QWidget, Callbacks):
             Callbacks.child = combo_1.currentText()
             Callbacks.parent = combo_2.currentText()
             Callbacks.trigger_reparent_frame()
+            self.output.append(Callbacks.information)
+
+        combo_2_box_button.clicked.connect(combo_2_box_button_clicked)
+
+        return combo_box
+
+    def make_clone_box(self):
+        combo_box = QGroupBox("clone")
+        combo_box.setMinimumWidth(300)
+        combo_box.setMaximumHeight(200)
+
+        combo_box_layout = QGridLayout()
+
+        line_edit_1 = QLineEdit("")
+        line_edit_1.setMaximumWidth(400)
+        combo_1_box_label = QLabel("child")
+        combo_2_box_label = QLabel("parent")
+        line_edit_1_box_label = QLabel("clone")
+
+        combo_1 = QComboBox()
+
+        combo_1_box_button = QPushButton("refresh")
+        combo_1_box_button.setMaximumWidth(280)
+        combo_2 = QComboBox()
+        combo_2.setMinimumWidth(400)
+        combo_2_box_button = QPushButton("clone")
+        combo_2_box_button.setMaximumWidth(80)
+
+        combo_box_layout.addWidget(combo_1_box_label, 0, 0)
+        combo_box_layout.addWidget(combo_1, 0, 1)
+        combo_box_layout.addWidget(combo_1_box_button, 1, 2)
+        combo_box_layout.addWidget(combo_2_box_label, 1, 0)
+        combo_box_layout.addWidget(combo_2, 1, 1)
+        combo_box_layout.addWidget(combo_2_box_button, 2, 2)
+        combo_box_layout.addWidget(line_edit_1_box_label,2, 0)
+        combo_box_layout.addWidget(line_edit_1, 2, 1)
+        combo_box.setLayout(combo_box_layout)
+
+        def combo_1_box_button_clicked():
+            Callbacks.trigger_refresh()
+            combo_1.clear()
+            combo_1.addItems(Callbacks.frames)
+            combo_2.clear()
+            combo_2.addItems(Callbacks.frames)
+
+        combo_1_box_button.clicked.connect(combo_1_box_button_clicked)
+
+        def combo_2_box_button_clicked():
+            Callbacks.child = combo_1.currentText()
+            Callbacks.parent = combo_2.currentText()
+            Callbacks.new_id = line_edit_1.text()
+            Callbacks.trigger_clone_frame()
             self.output.append(Callbacks.information)
 
         combo_2_box_button.clicked.connect(combo_2_box_button_clicked)

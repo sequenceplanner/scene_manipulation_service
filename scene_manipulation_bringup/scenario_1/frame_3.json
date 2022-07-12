@@ -1,0 +1,18 @@
+{
+    "active": true,
+    "child_frame_id": "frame_3",
+    "parent_frame_id": "frame_2",
+    "transform": {
+        "translation": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 1.0
+        },
+        "rotation": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "w": 1.0
+        }
+    }
+}
