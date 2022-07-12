@@ -26,7 +26,7 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ManipulateScene.srv"
   "srv/LookupTransform.srv"
-  "srv/LoadScenario.srv"
+  "srv/ReloadScenario.srv"
   "srv/GetAllTransforms.srv"
   DEPENDENCIES
     builtin_interfaces

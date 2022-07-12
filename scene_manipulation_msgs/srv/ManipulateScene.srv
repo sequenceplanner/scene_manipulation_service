@@ -1,26 +1,23 @@
 # Request
 
-# What to do with the frame [update(this will add the frame if it doesn't exist), remove, clone]
+# What to do with the frame [add, move, clone, reparent, remove, rename]
 string command
 
-# Name of frame to add to the scene
+# Name of the frame that is to be manipulated
 string child_frame_id
 
 # Desired frame to put the child frame in
 string parent_frame_id
 
-# New name of the cloned child frame
-string clone_frame_id
-
-# New name of the frame where the cloned child frame should be put
-string clone_parent_frame_id
+# New name, or the new name of the cloned child frame
+string new_frame_id
 
 # child_frame_id expressed in parent_frame_id
 geometry_msgs/Transform transform
 
-# If same_position is true, the position in world will be the same after change of parent
-# If it is true, the transform will be ignored.
-bool same_position_in_world
+# Whether to manipulate the json file
+# No persist for now, if you want to persist the change, edit the json file manually
+# bool persist
 
 ---
 

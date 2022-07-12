@@ -109,9 +109,32 @@ As the scene manipulation service node maintains its own buffer, it is easy to l
 
 ## Scene manipulation service
 
-The scene manipulation service allows removing, adding, updating and cloning frames in a scenario. It is done throught the `manipulate_scene` service using the `ManipulateScene` service message. The flowchart below depicts how the manipulation is performed and what can happen. 
+The scene manipulation service allows adding, removing, renaming, moving, reparenting and cloning frames in a scenario. It is done throught the `manipulate_scene` service using the `ManipulateScene` service message. Here is what the following commands do:
 
-![Alt text](/description/sms_chart.png "")
+1. `add` - If a frame  is not published by smss broadcaster nor does it exist in its buffer, it can be added using the `add` command. With this command, the full transform should be provided in the message, and the frame will then be put in the provided `parent_frame_id`.
+2. `remove` - Enables removing a frame from the broadcaster. If the frame is published elsewhere, it can not be removed. `CAUTION:` child frames of the removed frame will be orphaned. 
+3. `rename` - Enables renaming a frame from the broadcaster, with the provided new name `new_frame_id`. If the frame is published elsewhere, it can not be renamed. `CAUTION:` child frames of the renamed frame could be orphaned if they don't know that their parent was renamed.
+4. `move` - Enables moving a frame using the specified transform from the message. In this case, the parent will remain the same so the `parent_frame_id` is not considered.
+5. `reparent` - Enables changing the parent of a frame to another parent. In this case, only the `parent_frame_id` is considered as the position of the frame will remain the same in the world. 
+6. `clone` - Enables dupliacting the `child_frame_id` frame and naming it with `new_frame_id`. The frame will remain in the same position, but the parent of the clone can be specified with `parent_frame_id`.
+
+The flowcharts below depict how the manipulation is performed and what can happen. 
+
+## Add
+
+![Alt text](/description/add_chart.png "")
+
+## remove
+
+![Alt text](/description/remove_chart.png "")
+
+## rename
+
+![Alt text](/description/rename_chart.png "")
+
+## move
+
+![Alt text](/description/move_chart.png "")
 
 ## Acknowledgements:
 Christian Larsen (sms concept) - Fraunhofer Chalmers Centre\

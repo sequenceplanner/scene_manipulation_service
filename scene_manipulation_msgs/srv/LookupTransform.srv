@@ -6,4 +6,5 @@ string child_frame_id
 
 # Reply
 bool success
+string info
 geometry_msgs/TransformStamped transform
