@@ -118,31 +118,20 @@ The scene manipulation service allows adding, removing, renaming, moving, repare
 5. `reparent` - Enables changing the parent of a frame to another parent. In this case, only the `parent_frame_id` is considered as the position of the frame will remain the same in the world. 
 6. `clone` - Enables dupliacting the `child_frame_id` frame and naming it with `new_frame_id`. The frame will remain in the same position, but the parent of the clone can be specified with `parent_frame_id`.
 
-The flowcharts below depict how the manipulation is performed and what can happen. 
+Flowcharts that depict how the manipulation is performed and what can happen can be found in the `description`. 
 
-## Add
+## A helpful GUI
 
-![Alt text](/description/add_chart.png "")
+The scene manipulation GUI can be launched with: 
+```
+ros2 launch scene_manipulation_bringup sms_example_with_gui.launch.py
+``` 
+![Alt text](/description/gui.png "")
 
-## remove
-
-![Alt text](/description/remove_chart.png "")
-
-## rename
-
-![Alt text](/description/rename_chart.png "")
-
-## move
-
-![Alt text](/description/move_chart.png "")
-
-## reparent
-
-![Alt text](/description/reparent_chart.png "")
-
-## clone
-
-![Alt text](/description/clone_chart.png "")
+## Visualize and inspect
+```
+ros2 run rviz2 rviz2
+```
 
 ## Acknowledgements:
 Christian Larsen (sms concept) - Fraunhofer Chalmers Centre\

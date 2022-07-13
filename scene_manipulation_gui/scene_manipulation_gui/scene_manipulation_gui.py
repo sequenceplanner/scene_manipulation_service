@@ -1,9 +1,10 @@
 import sys
+from urllib import response
 import rclpy
 import tf2_ros
 from rclpy.node import Node
 from geometry_msgs.msg import TransformStamped
-from scene_manipulation_msgs.srv import LookupTransform, ManipulateScene
+from scene_manipulation_msgs.srv import LookupTransform, ManipulateScene, ReloadScenario, GetAllTransforms
 from sensor_msgs.msg import JointState
 
 import threading
@@ -26,6 +27,7 @@ class Callbacks:
     frames = []
     joints = JointState()
     permanent = False
+    scenario_path = ""
 
     trigger_refresh = None
     trigger_query = None
@@ -33,6 +35,8 @@ class Callbacks:
     trigger_rename_frame = None
     trigger_reparent_frame = None
     trigger_clone_frame = None
+    trigger_reload_scenario = None
+    trigger_get_all = None
 
 class Ros2Node(Node, Callbacks):
     def __init__(self):
@@ -45,6 +49,8 @@ class Ros2Node(Node, Callbacks):
         Callbacks.trigger_rename_frame = self.trigger_rename_frame
         Callbacks.trigger_reparent_frame = self.trigger_reparent_frame
         Callbacks.trigger_clone_frame = self.trigger_clone_frame
+        Callbacks.trigger_reload_scenario = self.trigger_reload_scenario
+        Callbacks.trigger_get_all = self.trigger_get_all
 
         self.tf_buffer = tf2_ros.Buffer()
         self.lf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
@@ -53,6 +59,8 @@ class Ros2Node(Node, Callbacks):
         self.scenario_path = (
             self.get_parameter("scenario_path").get_parameter_value().string_value
         )
+
+        Callbacks.scenario_path = self.scenario_path
 
         self.tf_lookup_client = self.create_client(LookupTransform, "lookup_transform")
         self.tf_lookup_request = LookupTransform.Request()
@@ -68,6 +76,24 @@ class Ros2Node(Node, Callbacks):
         while not self.sms_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn(
                 "Manipulate Scene Service not available, waiting again..."
+            )
+
+        self.reload_client = self.create_client(ReloadScenario, "reload_scenario")
+        self.reload_request = ReloadScenario.Request()
+        self.reload_response = ReloadScenario.Response()
+
+        while not self.reload_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().warn(
+                "Reload Scenario Service not available, waiting again..."
+            )
+
+        self.get_all_client = self.create_client(GetAllTransforms, "get_all_transforms")
+        self.get_all_request = GetAllTransforms.Request()
+        self.get_all_response = GetAllTransforms.Response()
+
+        while not self.get_all_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().warn(
+                "Get All Transforms Service not available, waiting again..."
             )
 
         # initialize joint states if robot is not running
@@ -144,6 +170,39 @@ class Ros2Node(Node, Callbacks):
                     self.get_logger().info("SMS succeded %r" % (response.success))
                 return response
 
+    def reload_scenario(self, path):
+        self.reload_request.scenario_path = path
+        future = self.reload_client.call_async(self.reload_request)
+        while True:
+            if future.done():
+                try:
+                    response = future.result()
+                except Exception as e:
+                    self.get_logger().info("Reload service call failed %r" % (e,))
+                else:
+                    self.get_logger().info("Reload succeded %r" % (response.success))
+                return response
+
+    def get_all(self):
+        future = self.get_all_client.call_async(self.get_all_request)
+        while True:
+            if future.done():
+                try:
+                    response = future.result()
+                except Exception as e:
+                    self.get_logger().info("Get all service call failed %r" % (e,))
+                else:
+                    self.get_logger().info("Get all succeded %r" % (response.success))
+                return response
+
+    def trigger_reload_scenario(self):
+        response = self.reload_scenario(Callbacks.scenario_path)
+        Callbacks.information = str(response.success) + ": " + response.info
+
+    def trigger_get_all(self):
+        response = self.get_all()
+        Callbacks.information = str(response)
+
     def trigger_remove_frame(self):
         response = self.manipulate_scene(
             "remove",
@@ -215,6 +274,7 @@ class Window(QWidget, Callbacks):
         grid.addWidget(self.make_rename_box())
         grid.addWidget(self.make_reparent_box())
         grid.addWidget(self.make_clone_box())
+        grid.addWidget(self.make_extras_box())
         grid.addWidget(self.make_information_box())
         self.setLayout(grid)
         self.setWindowTitle("Scene Manipulateion GUI")
@@ -242,7 +302,7 @@ class Window(QWidget, Callbacks):
         return information_box
 
     def make_query_tf_box(self):
-        combo_box = QGroupBox("query")
+        combo_box = QGroupBox("")
         combo_box.setMinimumWidth(300)
         combo_box.setMaximumHeight(100)
 
@@ -288,7 +348,7 @@ class Window(QWidget, Callbacks):
         return combo_box
 
     def make_remove_box(self):
-        combo_box = QGroupBox("remove")
+        combo_box = QGroupBox("")
         combo_box.setMinimumWidth(300)
         combo_box.setMaximumHeight(100)
 
@@ -326,7 +386,7 @@ class Window(QWidget, Callbacks):
         return combo_box
 
     def make_rename_box(self):
-        combo_box = QGroupBox("rename")
+        combo_box = QGroupBox("")
         combo_box.setMinimumWidth(300)
         combo_box.setMaximumHeight(200)
 
@@ -371,7 +431,7 @@ class Window(QWidget, Callbacks):
         return combo_box
 
     def make_reparent_box(self):
-        combo_box = QGroupBox("reparent")
+        combo_box = QGroupBox("")
         combo_box.setMinimumWidth(300)
         combo_box.setMaximumHeight(100)
 
@@ -417,7 +477,7 @@ class Window(QWidget, Callbacks):
         return combo_box
 
     def make_clone_box(self):
-        combo_box = QGroupBox("clone")
+        combo_box = QGroupBox("")
         combo_box.setMinimumWidth(300)
         combo_box.setMaximumHeight(200)
 
@@ -462,6 +522,43 @@ class Window(QWidget, Callbacks):
             Callbacks.parent = combo_2.currentText()
             Callbacks.new_id = line_edit_1.text()
             Callbacks.trigger_clone_frame()
+            self.output.append(Callbacks.information)
+
+        combo_2_box_button.clicked.connect(combo_2_box_button_clicked)
+
+        return combo_box
+
+    def make_extras_box(self):
+        combo_box = QGroupBox("")
+        combo_box.setMinimumWidth(300)
+        combo_box.setMaximumHeight(100)
+
+        combo_box_layout = QGridLayout()
+
+        combo_2_box_label = QLabel("path")
+
+        combo_1_box_button = QPushButton("reload")
+        combo_1_box_button.setMaximumWidth(280)
+        line_edit_1 = QLineEdit(Callbacks.scenario_path)
+        line_edit_1.setMaximumWidth(313)
+        combo_2_box_button = QPushButton("get_all")
+        combo_2_box_button.setMaximumWidth(80)
+
+        combo_box_layout.addWidget(combo_2_box_label, 0, 0)
+        combo_box_layout.addWidget(line_edit_1, 0, 1)
+        combo_box_layout.addWidget(combo_1_box_button, 0, 2)
+        combo_box_layout.addWidget(combo_2_box_button, 0, 3)
+        combo_box.setLayout(combo_box_layout)
+
+        def combo_1_box_button_clicked():
+            Callbacks.scenario_path = line_edit_1.text()
+            Callbacks.trigger_reload_scenario()
+            self.output.append(Callbacks.information)
+
+        combo_1_box_button.clicked.connect(combo_1_box_button_clicked)
+
+        def combo_2_box_button_clicked():
+            Callbacks.trigger_get_all()
             self.output.append(Callbacks.information)
 
         combo_2_box_button.clicked.connect(combo_2_box_button_clicked)

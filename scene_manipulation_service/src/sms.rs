@@ -7,10 +7,11 @@ use r2r::scene_manipulation_msgs::srv::{
 };
 use r2r::std_msgs::msg::Header;
 use r2r::tf2_msgs::msg::TFMessage;
-use r2r::{log_warn, ParameterValue, QosProfile, ServiceRequest};
+use r2r::{ParameterValue, QosProfile, ServiceRequest};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::default;
+use std::collections::HashMap;
+use std::error::Error;
+use std::fmt;
 use std::fs::{self, File};
 use std::io::BufReader;
 use std::sync::{Arc, Mutex};
@@ -32,7 +33,6 @@ pub struct FrameData {
     pub active: bool,
 }
 
-// differentiate frames loaded through service call or loaded from folder
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ExtendedFrameData {
     pub frame_data: FrameData,
@@ -42,8 +42,34 @@ pub struct ExtendedFrameData {
 // the testing module
 mod tests;
 
+// some error handling utils
+#[derive(Debug, Clone)]
+struct ErrorMsg {
+    info: String,
+}
+
+impl ErrorMsg {
+    fn new(info: &str) -> ErrorMsg {
+        ErrorMsg {
+            info: info.to_string(),
+        }
+    }
+}
+
+impl fmt::Display for ErrorMsg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.info)
+    }
+}
+
+impl Error for ErrorMsg {
+    fn description(&self) -> &str {
+        &self.info
+    }
+}
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn Error>> {
     // setup the node
     let ctx = r2r::Context::create()?;
     let mut node = r2r::Node::create(ctx, NODE_ID, "")?;
@@ -73,15 +99,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let path = Arc::new(Mutex::new(path_param.clone()));
-    let scenario = list_frames_in_dir(&path_param, true).await;
+    // let path = Arc::new(Mutex::new(path_param.clone()));
+    let scenario_res = list_frames_in_dir(&path_param, true).await;
 
-    let init_loaded = load_scenario(&scenario).await;
-    r2r::log_info!(
-        NODE_ID,
-        "Initial frames added to the scene: '{:?}'.",
-        init_loaded.keys()
-    );
+    let init_loaded = match scenario_res {
+        Ok(scenario) => {
+            let loaded = load_scenario(&scenario).await;
+            r2r::log_info!(
+                NODE_ID,
+                "Initial frames added to the scene: '{:?}'.",
+                loaded.keys()
+            );
+            loaded
+        }
+        Err(_) => {
+            r2r::log_warn!(NODE_ID, "No initial frames added to the scene.");
+            HashMap::<String, ExtendedFrameData>::new()
+        }
+    };
 
     // frames that are published by this broadcaster
     let broadcasted_frames = Arc::new(Mutex::new(init_loaded));
@@ -271,7 +306,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn list_frames_in_dir(path: &str, launch: bool) -> Vec<String> {
+async fn list_frames_in_dir(
+    path: &str,
+    launch: bool,
+) -> Result<Vec<String>, Box<dyn std::error::Error + Send>> {
     let mut scenario = vec![];
     match fs::read_dir(path) {
         Ok(dir) => dir.for_each(|file| match file {
@@ -281,22 +319,24 @@ async fn list_frames_in_dir(path: &str, launch: bool) -> Vec<String> {
             },
             Err(e) => r2r::log_warn!(NODE_ID, "Reading entry failed with '{}'.", e),
         }),
-        Err(e) => match launch {
-            true => {
-                r2r::log_warn!(
-                    NODE_ID,
-                    "Reading the scenario directory failed with: '{}'.",
-                    e
-                );
-                r2r::log_warn!(NODE_ID, "Empty scenario is launched.");
-            }
-            false => (),
-        },
+        Err(e) => {
+            r2r::log_warn!(
+                NODE_ID,
+                "Reading the scenario directory failed with: '{}'.",
+                e
+            );
+            r2r::log_warn!(NODE_ID, "Empty scenario is loaded/reloaded.");
+            return Err(Box::new(ErrorMsg::new(&format!(
+                "Reading the scenario directory failed with: '{}'. 
+                    Empty scenario is loaded/reloaded.",
+                e
+            ))));
+        }
     }
-    scenario
+    Ok(scenario)
 }
 
-async fn load_scenario(scenario: &Vec<String>) -> HashMap<String, ExtendedFrameData> {
+async fn load_scenario(scenario: &Vec<String>) -> HashMap<String, ExtendedFrameData>  {
     let mut frame_datas: HashMap<String, ExtendedFrameData> = HashMap::new();
     scenario.iter().for_each(|x| match File::open(x) {
         Ok(file) => {
@@ -315,8 +355,8 @@ async fn load_scenario(scenario: &Vec<String>) -> HashMap<String, ExtendedFrameD
                         "world".to_string(),
                         ExtendedFrameData {
                             frame_data: FrameData {
-                                parent_frame_id: "world_origin".to_string(), //"origin", 
-                                child_frame_id: "world".to_string(), 
+                                parent_frame_id: "world_origin".to_string(), //"origin",
+                                child_frame_id: "world".to_string(),
                                 transform: Transform {
                                     translation: Vector3 {
                                         x: 0.0,
@@ -331,17 +371,71 @@ async fn load_scenario(scenario: &Vec<String>) -> HashMap<String, ExtendedFrameD
                                     },
                                 },
                                 active: true,
-                            }, 
-                            time_stamp 
-                        }
+                            },
+                            time_stamp,
+                        },
                     );
                 }
-                Err(e) => r2r::log_warn!(NODE_ID, "Serde failed with: '{}'.", e),
+                Err(e) => {
+                    r2r::log_warn!(NODE_ID, "Serde failed with: '{}'.", e);
+                },
             }
         }
         Err(e) => r2r::log_warn!(NODE_ID, "Opening json file failed with: '{}'.", e),
     });
     frame_datas
+}
+
+// maybe add a loop check before adding frames
+async fn load_scenario_server(
+    mut service: impl Stream<Item = ServiceRequest<ReloadScenario::Service>> + Unpin,
+    broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    loop {
+        match service.next().await {
+            Some(request) => {
+                let scenario_res = list_frames_in_dir(&request.message.scenario_path, true).await;
+                match scenario_res {
+                    Ok(scenario) => {
+                        let loaded = load_scenario(&scenario).await;
+                        r2r::log_info!(
+                            NODE_ID,
+                            "Reloaded frames in the scene: '{:?}'.",
+                            loaded.keys()
+                        );
+                        let mut local_broadcasted_frames =
+                            broadcasted_frames.lock().unwrap().clone();
+                        for x in &loaded {
+                            local_broadcasted_frames.insert(x.0.clone(), x.1.clone());
+                        }
+                        *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
+                        request
+                            .respond(ReloadScenario::Response {
+                                success: true,
+                                info: format!(
+                                    "Reloaded frames in the scene: '{:?}'.",
+                                    loaded.keys()
+                                )
+                                .to_string(),
+                            })
+                            .expect("Could not send service response.");
+                        continue;
+                    }
+                    Err(e) => {
+                        request
+                            .respond(ReloadScenario::Response {
+                                success: false,
+                                info: format!("Reloading the scenario failed with: '{:?}'.", e)
+                                    .to_string(),
+                            })
+                            .expect("Could not send service response.");
+                        continue;
+                    }
+                }
+            }
+            None => (),
+        }
+    }
 }
 
 async fn scene_manipulation_server(
@@ -413,32 +507,6 @@ async fn scene_manipulation_server(
                 }
             },
             None => {}
-        }
-    }
-}
-
-async fn load_scenario_server(
-    mut service: impl Stream<Item = ServiceRequest<ReloadScenario::Service>> + Unpin,
-    broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    loop {
-        match service.next().await {
-            Some(request) => {
-                let scenario = list_frames_in_dir(&request.message.scenario_path, true).await;
-
-                let loaded = load_scenario(&scenario).await;
-                r2r::log_info!(
-                    NODE_ID,
-                    "Initial frames added to the scene: '{:?}'.",
-                    loaded.keys()
-                );
-                let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
-                loaded
-                    .iter()
-                    .map(|x| local_broadcasted_frames.insert(x.0.clone(), x.1.clone()));
-                *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
-            }
-            None => (),
         }
     }
 }
@@ -644,7 +712,7 @@ async fn add_frame(
                     },
                 },
                 true => {
-                    tokio::time::sleep(std::time::Duration::from_millis(2000));
+                    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
                     match local_buffered_frames.contains_key(&message.child_frame_id) {
                         false => error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
                         true => error_response("Frame already exists."),
@@ -696,7 +764,7 @@ async fn remove_frame(
             false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => error_response("Frame doesn't exist in tf, nor is it published by this broadcaster."),
                 true => {
-                    tokio::time::sleep(std::time::Duration::from_millis(2000));
+                    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
                     match local_buffered_frames.contains_key(&message.child_frame_id) {
                         false => error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
                         true => inner(message, broadcasted_frames)
@@ -717,7 +785,7 @@ async fn rename_frame(
     broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
 ) -> ManipulateScene::Response {
-    let local_buffered_frames = buffered_frames.lock().unwrap().clone();
+    // let local_buffered_frames = buffered_frames.lock().unwrap().clone();
     let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
 
     let remove_response = remove_frame(
@@ -779,7 +847,7 @@ async fn move_frame(
             false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => error_response("Frame doesn't exist."),
                 true => {
-                    tokio::time::sleep(std::time::Duration::from_millis(2000));
+                    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
                     match local_buffered_frames.contains_key(&message.child_frame_id) {
                         false => error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
                         true => add_with_msg_tf(message, broadcasted_frames),
@@ -808,15 +876,14 @@ async fn reparent_frame(
         broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
         buffered_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
     ) -> ManipulateScene::Response {
-        let mut local_buffered_frames = buffered_frames.lock().unwrap().clone();
+        let local_buffered_frames = buffered_frames.lock().unwrap().clone();
         match check_would_produce_cycle(
-            &make_extended_frame_data(
-                &ManipulateScene::Request {
-                    command: "reparent".to_string(),
-                    child_frame_id: message.child_frame_id.to_string(),
-                    parent_frame_id: message.parent_frame_id.to_string(),
-                    new_frame_id: message.new_frame_id.to_string(),
-                    transform: message.transform.clone(),
+            &make_extended_frame_data(&ManipulateScene::Request {
+                command: "reparent".to_string(),
+                child_frame_id: message.child_frame_id.to_string(),
+                parent_frame_id: message.parent_frame_id.to_string(),
+                new_frame_id: message.new_frame_id.to_string(),
+                transform: message.transform.clone(),
             }),
             &local_buffered_frames,
         ) {
@@ -828,9 +895,7 @@ async fn reparent_frame(
             .await
             {
                 None => error_response("Frailed to lookup transform."),
-                Some(transform) => {
-                    add_with_lookup_tf(message, broadcasted_frames, transform)
-                }
+                Some(transform) => add_with_lookup_tf(message, broadcasted_frames, transform),
             },
             (true, cause) => error_response(&format!(
                 "Adding frame '{}' would produce a cycle. Not added, cause: '{}'",
@@ -839,13 +904,12 @@ async fn reparent_frame(
         }
     }
 
-
     match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" {
         false => match local_buffered_frames.contains_key(&message.child_frame_id) {
             false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => error_response("Frame doesn't exist."),
                 true => {
-                    tokio::time::sleep(std::time::Duration::from_millis(2000));
+                    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
                     match local_buffered_frames.contains_key(&message.child_frame_id) {
                         false => error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
                         true => inner(&message, &broadcasted_frames, &buffered_frames).await
@@ -874,7 +938,7 @@ async fn clone_frame(
         broadcasted_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
         buffered_frames: &Arc<Mutex<HashMap<String, ExtendedFrameData>>>,
     ) -> ManipulateScene::Response {
-        let mut local_buffered_frames = buffered_frames.lock().unwrap().clone();
+        let local_buffered_frames = buffered_frames.lock().unwrap().clone();
         let new_message = ManipulateScene::Request {
             command: "clone".to_string(),
             child_frame_id: message.new_frame_id.to_string(),
@@ -883,8 +947,7 @@ async fn clone_frame(
             transform: message.transform.clone(),
         };
         match check_would_produce_cycle(
-            &make_extended_frame_data(
-                &new_message),
+            &make_extended_frame_data(&new_message),
             &local_buffered_frames,
         ) {
             (false, _) => match lookup_transform(
@@ -895,9 +958,7 @@ async fn clone_frame(
             .await
             {
                 None => error_response("Frailed to lookup transform."),
-                Some(transform) => {
-                    add_with_lookup_tf(&new_message, broadcasted_frames, transform)
-                }
+                Some(transform) => add_with_lookup_tf(&new_message, broadcasted_frames, transform),
             },
             (true, cause) => error_response(&format!(
                 "Adding frame '{}' would produce a cycle. Not added, cause: '{}'",
@@ -910,7 +971,7 @@ async fn clone_frame(
         false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
             false => error_response("Frame doesn't exist."),
             true => {
-                tokio::time::sleep(std::time::Duration::from_millis(2000));
+                tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
                 match local_buffered_frames.contains_key(&message.child_frame_id) {
                     false => error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
                     true => match local_buffered_frames.contains_key(&message.parent_frame_id) {
@@ -919,8 +980,8 @@ async fn clone_frame(
                     }
                 }
             }
-        }
-        true => inner(&message, &broadcasted_frames, &buffered_frames).await  
+        },
+        true => inner(&message, &broadcasted_frames, &buffered_frames).await,
     }
 }
 
@@ -1152,9 +1213,9 @@ async fn active_tf_listener_callback(
                 message.transforms.iter().for_each(|t| {
                     // before adding an active frame to the buffer, check if the frame is
                     // already stale as defined with ACTIVE_FRAME_LIFETIME
-                    let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
-                    let now = clock.get_now().unwrap();
-                    let current_time = r2r::Clock::to_builtin_time(&now);
+                    // let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
+                    // let now = clock.get_now().unwrap();
+                    // let current_time = r2r::Clock::to_builtin_time(&now);
 
                     // match current_time.sec > t.header.stamp.sec + ACTIVE_FRAME_LIFETIME {
                     //     false => {
@@ -1290,7 +1351,7 @@ async fn lookup_transform(
             },
             None => None,
         },
-        (true, cause) => None,
+        (true, _cause) => None,
     }
 }
 
@@ -1399,19 +1460,19 @@ fn get_frame_children(frame: &str, frames: &HashMap<String, ExtendedFrameData>) 
 }
 
 // get all children frames of a frame as a hashmap
-fn get_frame_children_2(
-    frame: &str,
-    frames: &HashMap<String, ExtendedFrameData>,
-) -> HashMap<String, ExtendedFrameData> {
-    let mut children = HashMap::<String, ExtendedFrameData>::new();
-    frames
-        .iter()
-        .filter(|(_, v)| frame == v.frame_data.parent_frame_id)
-        .for_each(|(k, v)| {
-            children.insert(k.to_string(), v.clone());
-        });
-    children
-}
+// fn get_frame_children_2(
+//     frame: &str,
+//     frames: &HashMap<String, ExtendedFrameData>,
+// ) -> HashMap<String, ExtendedFrameData> {
+//     let mut children = HashMap::<String, ExtendedFrameData>::new();
+//     frames
+//         .iter()
+//         .filter(|(_, v)| frame == v.frame_data.parent_frame_id)
+//         .for_each(|(k, v)| {
+//             children.insert(k.to_string(), v.clone());
+//         });
+//     children
+// }
 
 // get all children frames of a frame
 fn get_frame_children_3(
