@@ -21,7 +21,7 @@ pub static NODE_ID: &'static str = "scene_manipulation_service";
 pub static STATIC_BROADCAST_RATE: u64 = 1000;
 pub static ACTIVE_BROADCAST_RATE: u64 = 100;
 pub static BUFFER_MAINTAIN_RATE: u64 = 100;
-pub static ACTIVE_FRAME_LIFETIME: i32 = 2; //seconds
+pub static ACTIVE_FRAME_LIFETIME: i32 = 3; //seconds
 pub static STATIC_FRAME_LIFETIME: i32 = 10; //seconds
 pub static MAX_TRANSFORM_CHAIN: u64 = 100;
 
@@ -125,7 +125,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let buffered_frames = Arc::new(Mutex::new(HashMap::<String, ExtendedFrameData>::new()));
 
     // listen to the active frames on the tf topic to see if a frame exists before broadcasting it
-    let active_tf_listener = node.subscribe::<TFMessage>("tf", QosProfile::default())?;
+    let active_tf_listener = node.subscribe::<TFMessage>("tf", QosProfile::best_effort(QosProfile::default()))?;
 
     // listen to the active frames on the static tf topic to see if a frame exists before broadcasting it
     let static_tf_listener = node.subscribe::<TFMessage>(
@@ -255,16 +255,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // spawn a tokio task to listen to the active frames and add them to the buffer
     let buffered_frames_clone_2 = buffered_frames.clone();
     tokio::task::spawn(async move {
-        match active_tf_listener_callback(active_tf_listener, &buffered_frames_clone_2).await {
+        match active_tf_listener_callback(active_tf_listener, &buffered_frames_clone_2.clone()).await {
             Ok(()) => (),
             Err(e) => r2r::log_error!(NODE_ID, "Active tf listener failed with: '{}'.", e),
         };
     });
 
     // spawn a tokio task to listen to the active frames and add them to the buffer
-    let buffered_frames_clone_2 = buffered_frames.clone();
+    let buffered_frames_clone_7 = buffered_frames.clone();
     tokio::task::spawn(async move {
-        match static_tf_listener_callback(static_tf_listener, &buffered_frames_clone_2).await {
+        match static_tf_listener_callback(static_tf_listener, &buffered_frames_clone_7.clone()).await {
             Ok(()) => (),
             Err(e) => r2r::log_error!(NODE_ID, "Static tf listener failed with: '{}'.", e),
         };

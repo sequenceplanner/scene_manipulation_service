@@ -31,7 +31,17 @@ def generate_launch_description():
             emulate_tty=True,
         )
 
-        nodes_to_start = [sms_node, sms_gui_node]
+        sms_marker_node = Node(
+            package="scene_manipulation_marker",
+            executable="scene_manipulation_marker",
+            namespace="",
+            output="screen",
+            parameters=[parameters],
+            remappings=[("/tf", "tf"), ("/tf_static", "tf_static")],
+            emulate_tty=True,
+        )
+
+        nodes_to_start = [sms_node, sms_gui_node, sms_marker_node]
 
         return LaunchDescription(nodes_to_start)
     else:

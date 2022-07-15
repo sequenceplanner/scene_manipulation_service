@@ -37,7 +37,7 @@ For preparation, commissioning and control of intelligent automation systems, we
 
 Let’s look at a pick and place and how we would prepare a scenario for picking some items. We can start with supplied original CAD files of components, and modify their coordinate frames having in mind how they should couple or interact with other components of the system. For example, a tool for picking certain items should have a `tool center point` frame at a correct place, as well as a main `coupling` frame. The left side of the figure below shows how the main frame of a suction tool was set, in order to properly couple with the robots `rsp` connector. 
 
-![Alt text](/description/svt_cad_frames.png "")
+![Alt text](/scene_manipulation_description/svt_cad_frames.png "")
 
 The right side of the figure above shows how the `tool center point` was set in order to match the frames of items to be picked up with this tool. Such frames have unique names in order for `tf` to be able to keep track of them. Let’s call the main frame `svt`, short for `small vacuum tool`, and the tool center point frame `svt_tcp`. The `svt_tcp` is defined in the main `svt` frame as a static transform since it is not expected for the transformation between them to change. On the other hand, the main `svt` frame is expected to be picked up by the robot or left at the tool stand, so let’s define the svt frame as an active transform with an initial parent at the tool stand. As the tool is expected to have a home position when released by the robot, let’s call this frame `svt_home`.
 
@@ -78,7 +78,7 @@ features. We call this `scene manipulation service`.
 
 Let’s look at an example about how we keep track of an item that is scanned, picked, and then put on a moving platform. Shown on the figure below is an example `tf` tree that is being manipulated in order to estimate where the actual item is in the real world. Starting from the top left of the figure, we have a simple `tf` tree with the following nodes: W - world, G - gantry, F - facade, R - robot, B - bin, and C - camera.
 
-![Alt text](/description/sms_steps.png "")
+![Alt text](/scene_manipulation_description/sms_steps.png "")
 
 After detecting an item, it is put into the `tf` tree as a child node of the camera frame, as shown with I - item, in step 2 of the figure above. As the robot has to move in order to leave the camera and attach the tool, we `re-parent` the item frame
 to the bin frame, as seen at step 3. Steps 4 and 5 show the leaving of the camera and attaching the tool, shown with T- tool. At step 6, the tool detects that it is picking an item, and at that point the parent of the item frame is changed to that tool. The moving platform appears in the scene and added into the world frame as P - platform. At step 8, the tool leaves the item on the platform.
@@ -126,7 +126,7 @@ The scene manipulation GUI can be launched with:
 ```
 ros2 launch scene_manipulation_bringup sms_example_with_gui.launch.py
 ``` 
-![Alt text](/description/gui.png "")
+![Alt text](/scene_manipulation_description/gui.png "")
 
 ## Visualize and inspect
 ```
