@@ -18,6 +18,7 @@ r2r_cargo(rcl                       # mandatory
           std_msgs                  # the Header message is here 
           geometry_msgs             # the Transform and TransformStamped messages are here
           scene_manipulation_msgs   # the TransformLookup and ManipulateScene service msgs         
+          visualization_msgs
          )
 
 # install binaries

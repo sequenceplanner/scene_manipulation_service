@@ -19,6 +19,9 @@ geometry_msgs/Transform transform
 # No persist for now, if you want to persist the change, edit the json file manually
 # bool persist
 
+# Threshold zone around the frame
+# Could be used for example to indicate that the robot is at (near) the frame
+float64 zone
 ---
 
 # Reply

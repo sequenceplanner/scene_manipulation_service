@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 from interactive_markers import InteractiveMarkerServer
 from builtin_interfaces.msg import Time
-from scene_manipulation_msgs.srv import PlaceMarker
+from scene_manipulation_msgs.srv import ResetMarker
 from geometry_msgs.msg import TransformStamped
 from geometry_msgs.msg import Transform
 from scene_manipulation_msgs.srv import LookupTransform
@@ -20,14 +20,11 @@ class SceneManipulationMarker(Node):
         )
 
         self.initial_marker_pose = TransformStamped()
-
-        # self.initial_marker_pose = self.get_initial_marker_pose()
-        self.initial_marker_pose = TransformStamped()
         self.initial_marker_pose.child_frame_id = "teaching_marker"
         self.initial_marker_pose.header.frame_id = "world"
         self.initial_marker_pose.transform.translation.x = 1.0
         self.initial_marker_pose.transform.translation.y = 1.0
-        self.initial_marker_pose.transform.translation.z = 1.0
+        self.initial_marker_pose.transform.translation.z = 0.0
         self.initial_marker_pose.transform.rotation.x = 0.0
         self.initial_marker_pose.transform.rotation.y = 0.0
         self.initial_marker_pose.transform.rotation.z = 0.0
@@ -35,11 +32,8 @@ class SceneManipulationMarker(Node):
 
         self.marker_pose = self.initial_marker_pose
 
-        # self.reset_service = self.create_service(PlaceMarker, 'reset_scene_manipulation_marker', self.reset_scene_manipulation_marker)
+        # self.reset_service = self.create_service(ResetMarker, 'reset_scene_manipulation_marker', self.reset_scene_manipulation_marker)
         self.broadcaster = TransformBroadcaster(self)
-        # self.publisher = self.create_publisher(
-        #     TransformStamped, "teaching_pose", 10
-        # )
 
         self.lookup_client = self.create_client(LookupTransform, "lookup_transform")
         
@@ -51,14 +45,6 @@ class SceneManipulationMarker(Node):
 
         # need a service also in gui like: put marker to "child" in "parent" when reseting and loading the marker
 
-        # self.declare_parameter("initial_base_link_id", "default_value")
-        # self.declare_parameter("initial_tcp_id", "default_value")
-        # self.declare_parameter("marker_scale", "default_value")
-        
-        # self.base_link = self.get_parameter("initial_base_link_id").get_parameter_value().string_value
-        # self.tcp_link = self.get_parameter("initial_tcp_id").get_parameter_value().string_value
-        # self.marker_scale = float(self.get_parameter("marker_scale").get_parameter_value().string_value)
-
         self.create_interactive_marker(False, InteractiveMarkerControl.NONE, self.initial_marker_pose, True)
         self.interactive_markers_server.applyChanges()
 
@@ -68,26 +54,13 @@ class SceneManipulationMarker(Node):
         self.marker_pose.header.stamp.nanosec = current_time[1]
         self.broadcaster.sendTransform(self.marker_pose)
 
-    # def get_initial_marker_pose(self):
-    #     request = LookupTransform.Request()
-    #     response = LookupTransform.Response()
-    #     request.parent_frame_id = self.base_link
-    #     request.child_frame_id = self.tcp_link
-    #     # request.deadline = 3000
-    #     future = self.client.call_async(request)
-    #     self.get_logger().info(f"request sent: {request}")
-    #     while rclpy.ok():
-    #         rclpy.spin_once(self)
-    #         if future.done():
-    #             try:
-    #                 response = future.result()
-    #             except Exception as e:
-    #                 self.get_logger().error(f"service call failed with: {(e,)}")
-    #             else:
-    #                 self.get_logger().info(f"lookup result: {self.response}")
-    #             finally:
-    #                 self.get_logger().info(f"service call completed")
-    #                 return response.transform
+    def reset_teaching_marker_callback(self, request, response):
+        self.interactive_markers_server.clear()
+        self.create_interactive_marker(False, InteractiveMarkerControl.NONE, self.initial_marker_pose, True)
+        self.interactive_markers_server.applyChanges()
+        self.get_logger().info('Got request to reset teaching marker.')
+        response.success = True
+        return response
 
     def create_marker_control(self, msg):
         control = InteractiveMarkerControl()
@@ -137,7 +110,7 @@ class SceneManipulationMarker(Node):
         int_marker.pose.orientation.y = initial_pose.transform.rotation.y
         int_marker.pose.orientation.z = initial_pose.transform.rotation.z
         int_marker.pose.orientation.w = initial_pose.transform.rotation.w
-        int_marker.scale = 0.5 #self.marker_scale
+        int_marker.scale = 1.5 #self.marker_scale
         int_marker.name = "teaching_marker"
         int_marker.description = "teaching_marker"
 
@@ -238,14 +211,6 @@ class SceneManipulationMarker(Node):
         self.interactive_markers_server.insert(
             int_marker, feedback_callback=self.process_feedback
         )
-
-    def reset_teaching_marker_callback(self, request, response):
-        self.interactive_markers_server.clear()
-        self.create_interactive_marker(False, InteractiveMarkerControl.NONE, self.initial_marker_pose, True)
-        self.interactive_markers_server.applyChanges()
-        self.get_logger().info('Got request to reset teaching marker.')
-        response.success = True
-        return response
 
 def main(args=None):
     rclpy.init(args=args)

@@ -28,7 +28,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/LookupTransform.srv"
   "srv/ReloadScenario.srv"
   "srv/GetAllTransforms.srv"
-  "srv/PlaceMarker.srv"
+  "srv/ResetMarker.srv"
   DEPENDENCIES
     builtin_interfaces
     geometry_msgs

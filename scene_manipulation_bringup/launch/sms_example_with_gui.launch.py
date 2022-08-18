@@ -6,10 +6,11 @@ def generate_launch_description():
 
     # provide absolute path to the scenario directory
     # TODO: add scenario path as launch argument
-    scenario_path = "/home/endre/Desktop/scenario_1"
+    frames_path = "/home/endre/Desktop/scenario_gpss/frames/"
+    rviz_config_file = "/home/endre/Desktop/scenario_gpss/config/gpss.rviz"
     
-    if os.path.isdir(scenario_path):
-        parameters = {"scenario_path": scenario_path}
+    if os.path.isdir(frames_path):
+        parameters = {"scenario_path": frames_path}
 
         sms_node = Node(
             package="scene_manipulation_service",
@@ -18,6 +19,15 @@ def generate_launch_description():
             output="screen",
             parameters=[parameters],
             remappings=[("/tf", "tf"), ("/tf_static", "tf_static")],
+            emulate_tty=True,
+        )
+
+        rviz_node = Node(
+            package="rviz2",
+            executable="rviz2",
+            namespace="",
+            output="screen",
+            arguments=["-d", rviz_config_file],
             emulate_tty=True,
         )
 
@@ -41,9 +51,9 @@ def generate_launch_description():
             emulate_tty=True,
         )
 
-        nodes_to_start = [sms_node, sms_gui_node, sms_marker_node]
+        nodes_to_start = [sms_node, sms_gui_node, rviz_node, sms_marker_node]
 
         return LaunchDescription(nodes_to_start)
     else:
-        print("Failed, " + scenario_path + " is not a valid path.")
+        print("Failed, " + frames_path + " is not a valid path.")
         return LaunchDescription()
