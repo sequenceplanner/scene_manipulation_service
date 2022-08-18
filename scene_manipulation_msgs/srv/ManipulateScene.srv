@@ -22,6 +22,10 @@ geometry_msgs/Transform transform
 # Threshold zone around the frame
 # Could be used for example to indicate that the robot is at (near) the frame
 float64 zone
+
+# Could be used to store info about where the robot can move from the child_frame_id pose
+string[] next
+
 ---
 
 # Reply

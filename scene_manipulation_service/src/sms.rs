@@ -42,6 +42,7 @@ pub struct ZonedFrameData {
     pub transform: Transform,
     pub active: bool,
     pub zone: Option<f64>,
+    pub next: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -55,6 +56,7 @@ pub struct BroadcastedFrameData {
     pub frame_data: FrameData,
     pub time_stamp: Time,
     pub zone: Option<f64>,
+    pub next: Option<Vec<String>>,
 }
 
 // the testing module
@@ -194,10 +196,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let zone_marker_timer = node.create_wall_timer(std::time::Duration::from_millis(50))?;
     let broadcasted_frames_clone_16 = broadcasted_frames.clone();
+    let buffered_frames_clone_16 = buffered_frames.clone();
     tokio::task::spawn(async move {
         match zone_marker_publisher_callback(
             zone_marker_publisher,
             &broadcasted_frames_clone_16,
+            &buffered_frames_clone_16,
             zone_marker_timer,
         )
         .await
@@ -399,11 +403,8 @@ async fn load_scenario(scenario: &Vec<String>) -> HashMap<String, BroadcastedFra
                             active: zoned.active.clone(),
                         },
                         time_stamp: time_stamp.clone(),
-                        zone: match zoned.zone {
-                            Some(z) => Some(z),
-                            None => None,
-                        }
-                        .clone(), // 0.0 // jsonl.zone.clone(), // should check if zone exists
+                        zone: zoned.zone.clone(),
+                        next: zoned.next.clone(),
                     };
                     frame_datas.insert(json.frame_data.child_frame_id.clone(), json.clone());
                     frame_datas.insert(
@@ -429,6 +430,7 @@ async fn load_scenario(scenario: &Vec<String>) -> HashMap<String, BroadcastedFra
                             },
                             time_stamp,
                             zone: None,
+                            next: None,
                         },
                     );
                 }
@@ -697,6 +699,7 @@ fn make_broadcasted_frame_data(
         },
         time_stamp,
         zone: Some(message.zone.clone()),
+        next: Some(message.next.clone()),
     }
 }
 
@@ -736,6 +739,7 @@ fn add_with_lookup_tf(
             },
             time_stamp,
             zone: Some(message.zone.clone()),
+            next: Some(message.next.clone()),
         },
     );
     *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
@@ -854,6 +858,7 @@ async fn rename_frame(
             new_frame_id: message.new_frame_id.to_string(),
             transform: message.transform.clone(),
             zone: message.zone.clone(),
+            next: message.next.clone(),
         },
         &broadcasted_frames,
         &buffered_frames,
@@ -875,6 +880,7 @@ async fn rename_frame(
                         new_frame_id: message.new_frame_id.to_string(),
                         transform: message.transform.clone(),
                         zone: message.zone.clone(),
+                        next: message.next.clone(),
                     },
                     &broadcasted_frames,
                     &buffered_frames,
@@ -945,6 +951,7 @@ async fn reparent_frame(
                 new_frame_id: message.new_frame_id.to_string(),
                 transform: message.transform.clone(),
                 zone: message.zone.clone(),
+                next: message.next.clone(),
             }),
             &local_buffered_frames,
         ) {
@@ -1007,6 +1014,7 @@ async fn clone_frame(
             new_frame_id: message.new_frame_id.to_string(),
             transform: message.transform.clone(),
             zone: message.zone.clone(),
+            next: message.next.clone(),
         };
         match check_would_produce_cycle(
             &make_broadcasted_frame_data(&new_message),
@@ -1610,6 +1618,7 @@ fn check_would_produce_cycle(
 async fn zone_marker_publisher_callback(
     publisher: r2r::Publisher<MarkerArray>,
     broadcasted_frames: &Arc<Mutex<HashMap<String, BroadcastedFrameData>>>,
+    buffered_frames: &Arc<Mutex<HashMap<String, BufferedFrameData>>>,
     mut timer: r2r::Timer,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
@@ -1651,7 +1660,7 @@ async fn zone_marker_publisher_callback(
                                         w: 1.0, //frame.1.frame_data.transform.rotation.w,
                                     },
                                 },
-                                lifetime: Duration { sec: 2, nanosec: 0 },
+                                lifetime: Duration { sec: 5, nanosec: 0 },
                                 scale: Vector3 {
                                     x: z,
                                     y: z,
@@ -1666,6 +1675,62 @@ async fn zone_marker_publisher_callback(
                                 ..Marker::default()
                             };
                             markers.push(indiv_marker)
+                        }
+                    }
+                }
+                None => (),
+            }
+            match frame.1.next {
+                Some(n) => {
+                    for enabled in n {
+                        match lookup_transform(&frame.1.frame_data.child_frame_id, &enabled, &buffered_frames).await {
+                            Some(end_in_world) => {
+                                id = id + 1;
+                                let indiv_marker = Marker {
+                                    header: Header {
+                                        stamp: r2r::builtin_interfaces::msg::Time {
+                                            sec: 0,
+                                            nanosec: 0,
+                                        },
+                                        frame_id: frame
+                                            .1
+                                            .frame_data
+                                            .child_frame_id
+                                            .to_string(),
+                                    },
+                                    ns: "".to_string(),
+                                    id,
+                                    type_: 0,
+                                    action: 0,
+                                    points: vec!(
+                                        Point {
+                                            x: 0.0, 
+                                            y: 0.0, 
+                                            z: 0.0 
+                                        },
+                                        Point {
+                                            x: end_in_world.translation.x,
+                                            y: end_in_world.translation.y,
+                                            z: end_in_world.translation.z,
+                                        },
+                                    ),
+                                    lifetime: Duration { sec: 5, nanosec: 0 },
+                                    scale: Vector3 {
+                                        x: 0.1,
+                                        y: 0.2,
+                                        z: 0.5,
+                                    },
+                                    color: ColorRGBA {
+                                        r: 0.0,
+                                        g: 255.0,
+                                        b: 0.0,
+                                        a: 0.3,
+                                    },
+                                    ..Marker::default()
+                                };
+                                markers.push(indiv_marker)
+                            }
+                            None => (),
                         }
                     }
                 }
