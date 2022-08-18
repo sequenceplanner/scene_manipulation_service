@@ -28,6 +28,7 @@ class Callbacks:
     joints = JointState()
     permanent = False
     scenario_path = ""
+    zone = "0.0"
 
     trigger_refresh = None
     trigger_query = None
@@ -153,12 +154,13 @@ class Ros2Node(Node, Callbacks):
         else:
             Callbacks.information = str(response.success) + ": " + response.info
 
-    def manipulate_scene(self, command, child, parent, new_id, transform):
+    def manipulate_scene(self, command, child, parent, new_id, transform, zone):
         self.sms_request.command = command
         self.sms_request.child_frame_id = child
         self.sms_request.parent_frame_id = parent
         self.sms_request.new_frame_id = new_id
         self.sms_request.transform = transform
+        self.sms_request.zone = zone
         self.sms_future = self.sms_client.call_async(self.sms_request)
         while True:
             if self.sms_future.done():
@@ -210,6 +212,7 @@ class Ros2Node(Node, Callbacks):
             Callbacks.parent,
             Callbacks.new_id,
             Callbacks.transform.transform,
+            float(Callbacks.zone)
         )
         Callbacks.information = str(response.success) + ": " + response.info
 
@@ -220,6 +223,7 @@ class Ros2Node(Node, Callbacks):
             Callbacks.parent,
             Callbacks.new_id,
             Callbacks.transform.transform,
+            float(Callbacks.zone)
         )
         Callbacks.information = str(response.success) + ": " + response.info
 
@@ -230,6 +234,7 @@ class Ros2Node(Node, Callbacks):
             Callbacks.parent,
             Callbacks.new_id,
             Callbacks.transform.transform,
+            float(Callbacks.zone)
         )
         Callbacks.information = str(response.success) + ": " + response.info
 
@@ -240,6 +245,7 @@ class Ros2Node(Node, Callbacks):
             Callbacks.parent,
             Callbacks.new_id,
             Callbacks.transform.transform,
+            float(Callbacks.zone)
         )
         Callbacks.information = str(response.success) + ": " + response.info
 
@@ -281,11 +287,11 @@ class Window(QWidget, Callbacks):
         self.resize(600, 900)
 
     def make_information_box(self):
-        information_box = QGroupBox("information")
+        information_box = QGroupBox("info")
         information_box_layout = QGridLayout()
         self.output = QTextBrowser(information_box)
         self.output.setGeometry(QRect(10, 90, 600, 200))
-        self.output.setObjectName("information")
+        self.output.setObjectName("info")
         information_button = QPushButton("clear")
         information_button.setMaximumWidth(80)
         information_box_layout.addWidget(self.output, 0, 0)
@@ -535,33 +541,49 @@ class Window(QWidget, Callbacks):
 
         combo_box_layout = QGridLayout()
 
+        combo_1_box_label = QLabel("zone")
         combo_2_box_label = QLabel("path")
 
-        combo_1_box_button = QPushButton("reload")
+        combo_1_box_button = QPushButton("set")
         combo_1_box_button.setMaximumWidth(280)
-        line_edit_1 = QLineEdit(Callbacks.scenario_path)
+        
+        combo_2_box_button = QPushButton("reload")
+        combo_2_box_button.setMaximumWidth(280)
+        line_edit_1 = QLineEdit(Callbacks.zone)
         line_edit_1.setMaximumWidth(313)
-        combo_2_box_button = QPushButton("get_all")
-        combo_2_box_button.setMaximumWidth(80)
+        line_edit_2 = QLineEdit(Callbacks.scenario_path)
+        line_edit_2.setMaximumWidth(313)
+        combo_3_box_button = QPushButton("get_all")
+        combo_3_box_button.setMaximumWidth(80)
 
-        combo_box_layout.addWidget(combo_2_box_label, 0, 0)
+        combo_box_layout.addWidget(combo_1_box_label, 0, 0)
         combo_box_layout.addWidget(line_edit_1, 0, 1)
         combo_box_layout.addWidget(combo_1_box_button, 0, 2)
-        combo_box_layout.addWidget(combo_2_box_button, 0, 3)
+        combo_box_layout.addWidget(combo_2_box_label, 1, 0)
+        combo_box_layout.addWidget(line_edit_2, 1, 1)
+        combo_box_layout.addWidget(combo_2_box_button, 1, 2)
+        combo_box_layout.addWidget(combo_3_box_button, 1, 3)
         combo_box.setLayout(combo_box_layout)
 
         def combo_1_box_button_clicked():
-            Callbacks.scenario_path = line_edit_1.text()
-            Callbacks.trigger_reload_scenario()
+            Callbacks.zone = line_edit_1.text()
+            Callbacks.information = "Zone is set to " + Callbacks.zone
             self.output.append(Callbacks.information)
 
         combo_1_box_button.clicked.connect(combo_1_box_button_clicked)
 
         def combo_2_box_button_clicked():
-            Callbacks.trigger_get_all()
+            Callbacks.scenario_path = line_edit_2.text()
+            Callbacks.trigger_reload_scenario()
             self.output.append(Callbacks.information)
 
         combo_2_box_button.clicked.connect(combo_2_box_button_clicked)
+
+        def combo_3_box_button_clicked():
+            Callbacks.trigger_get_all()
+            self.output.append(Callbacks.information)
+
+        combo_3_box_button.clicked.connect(combo_3_box_button_clicked)
 
         return combo_box
 

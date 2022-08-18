@@ -1,6 +1,6 @@
 use futures::{stream::Stream, StreamExt};
 use glam::{DAffine3, DQuat, DVec3};
-use r2r::builtin_interfaces::msg::{Time, Duration};
+use r2r::builtin_interfaces::msg::{Duration, Time};
 use r2r::geometry_msgs::msg::{Point, Pose, Quaternion, Transform, TransformStamped, Vector3};
 use r2r::scene_manipulation_msgs::srv::{
     GetAllTransforms, LookupTransform, ManipulateScene, ReloadScenario,
@@ -1619,43 +1619,55 @@ async fn zone_marker_publisher_callback(
         for frame in frames_local {
             match frame.1.zone {
                 Some(z) => {
-                    id = id + 1;
-                    let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
-                    let now = clock.get_now().unwrap();
-                    let time_stamp = r2r::Clock::to_builtin_time(&now);
-                    let indiv_marker = Marker {
-                        header: Header {
-                            stamp: time_stamp,
-                            frame_id: frame.1.frame_data.child_frame_id.to_string(),
-                        },
-                        ns: "".to_string(),
-                        id,
-                        type_: 3,
-                        action: 0,
-                        pose: Pose {
-                            position: Point {
-                                x: 0.0, //frame.1.frame_data.transform.translation.x,
-                                y: 0.0, //frame.1.frame_data.transform.translation.y,
-                                z: 0.0 //frame.1.frame_data.transform.translation.z,
-                            },
-                            orientation: Quaternion {
-                                x: 0.0, //frame.1.frame_data.transform.rotation.x,
-                                y: 0.0, //frame.1.frame_data.transform.rotation.y,
-                                z: 0.0, //frame.1.frame_data.transform.rotation.z,
-                                w: 1.0 //frame.1.frame_data.transform.rotation.w,
-                            },
-                        },
-                        lifetime: Duration { sec: 2, nanosec: 0 },
-                        scale: Vector3 { x: z, y: z, z: 0.01 },
-                        color: ColorRGBA {
-                            r: 0.0,
-                            g: 255.0,
-                            b: 0.0,
-                            a: 0.3,
-                        },
-                        ..Marker::default()
-                    };
-                    markers.push(indiv_marker)
+                    match z {
+                        0.0 => (),
+                        _ => {
+                            id = id + 1;
+                            // let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
+                            // let now = clock.get_now().unwrap();
+                            // let time_stamp = r2r::Clock::to_builtin_time(&now);
+                            let indiv_marker = Marker {
+                                header: Header {
+                                    stamp: r2r::builtin_interfaces::msg::Time {
+                                        sec: 0,
+                                        nanosec: 0,
+                                    },
+                                    frame_id: frame.1.frame_data.child_frame_id.to_string(),
+                                },
+                                ns: "".to_string(),
+                                id,
+                                type_: 3,
+                                action: 0,
+                                pose: Pose {
+                                    position: Point {
+                                        x: 0.0, //frame.1.frame_data.transform.translation.x,
+                                        y: 0.0, //frame.1.frame_data.transform.translation.y,
+                                        z: 0.0, //frame.1.frame_data.transform.translation.z,
+                                    },
+                                    orientation: Quaternion {
+                                        x: 0.0, //frame.1.frame_data.transform.rotation.x,
+                                        y: 0.0, //frame.1.frame_data.transform.rotation.y,
+                                        z: 0.0, //frame.1.frame_data.transform.rotation.z,
+                                        w: 1.0, //frame.1.frame_data.transform.rotation.w,
+                                    },
+                                },
+                                lifetime: Duration { sec: 2, nanosec: 0 },
+                                scale: Vector3 {
+                                    x: z,
+                                    y: z,
+                                    z: 0.01,
+                                },
+                                color: ColorRGBA {
+                                    r: 0.0,
+                                    g: 255.0,
+                                    b: 0.0,
+                                    a: 0.3,
+                                },
+                                ..Marker::default()
+                            };
+                            markers.push(indiv_marker)
+                        }
+                    }
                 }
                 None => (),
             }
