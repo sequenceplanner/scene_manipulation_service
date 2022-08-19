@@ -476,6 +476,7 @@ dependencies = [
 [[package]]
 name = "r2r"
 version = "0.6.2"
+source = "git+https://github.com/sequenceplanner/r2r#474b9d9482dfff7c84515654175c97bd6162a90b"
 dependencies = [
  "futures",
  "lazy_static",
@@ -483,7 +484,6 @@ dependencies = [
  "r2r_common",
  "r2r_msg_gen",
  "r2r_rcl",
- "retain_mut",
  "serde",
  "serde_json",
  "thiserror",
@@ -493,9 +493,9 @@ dependencies = [
 [[package]]
 name = "r2r_actions"
 version = "0.3.1"
+source = "git+https://github.com/sequenceplanner/r2r#474b9d9482dfff7c84515654175c97bd6162a90b"
 dependencies = [
  "bindgen",
- "itertools",
  "r2r_common",
  "r2r_msg_gen",
  "r2r_rcl",
@@ -504,10 +504,16 @@ dependencies = [
 [[package]]
 name = "r2r_common"
 version = "0.3.1"
+source = "git+https://github.com/sequenceplanner/r2r#474b9d9482dfff7c84515654175c97bd6162a90b"
+dependencies = [
+ "bindgen",
+ "itertools",
+]
 
 [[package]]
 name = "r2r_msg_gen"
 version = "0.3.2"
+source = "git+https://github.com/sequenceplanner/r2r#474b9d9482dfff7c84515654175c97bd6162a90b"
 dependencies = [
  "bindgen",
  "heck",
@@ -519,9 +525,9 @@ dependencies = [
 [[package]]
 name = "r2r_rcl"
 version = "0.3.1"
+source = "git+https://github.com/sequenceplanner/r2r#474b9d9482dfff7c84515654175c97bd6162a90b"
 dependencies = [
  "bindgen",
- "itertools",
  "paste",
  "r2r_common",
  "widestring",
@@ -561,12 +567,6 @@ checksum = "3acd125665422973a33ac9d3dd2df85edad0f4ae9b00dafb1a05e43a9f5ef8e7"
 dependencies = [
  "winapi",
 ]
-
-[[package]]
-name = "retain_mut"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "51dd4445360338dab5116712bee1388dc727991d51969558a8882ab552e6db30"
 
 [[package]]
 name = "rustc-hash"

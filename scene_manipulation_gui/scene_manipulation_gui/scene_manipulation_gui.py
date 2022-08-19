@@ -305,20 +305,27 @@ class Window(QWidget, Callbacks):
 
         combo_box_layout = QGridLayout()
         combo_1_box_label = QLabel("frame")
+        combo_1_box_label.setToolTip("""Select a child frame to manipulate or use it to change the scene.""")
         self.child_select_combo = QComboBox()
         self.child_select_combo.setMinimumWidth(360)
+        self.child_select_combo.setToolTip("""Select a child frame to manipulate or use it to change the scene.""")
         
 
         combo_2_box_label = QLabel("parent")
+        combo_2_box_label.setToolTip("""Select a parent frame in which the selected child frame will be looked up, reparented, etc.""")
         self.parent_select_combo = QComboBox()
         self.parent_select_combo.setMinimumWidth(360)
+        self.parent_select_combo.setToolTip("""Select a parent frame in which the selected child frame will be looked up, reparented, etc.""")
 
         self.refresh_button = QPushButton("refresh")
+        self.refresh_button.setToolTip("""Refresh the lists to get all the latest frames in the scene.""")
         # self.refresh_button.setMaximumWidth(280)
 
         self.persist = QCheckBox("persist")
         self.persist.setChecked(False)
         self.persist.stateChanged.connect(lambda: persist_box_state_change(self.persist))
+        self.persist.setToolTip("""Checking "persist" enables you to permanently save changes made while the box is checked. 
+If "persist" is not checked, the changes will only affect the current session.""")
 
         info = QLabel("")
         info.setMaximumWidth(25)
@@ -364,30 +371,23 @@ class Window(QWidget, Callbacks):
         combo_box_layout = QGridLayout()
 
         query_button = QPushButton("query")
+        query_button.setToolTip("""Look up the current transformation from the selected parent frame to the selected child frame.""")
         remove_button = QPushButton("remove")
+        remove_button.setToolTip("""Remove the selected child frame from the scene. Note the "persist" checkbox.""")
         reparent_button = QPushButton("reparent")
+        reparent_button.setToolTip("""Change the parent of the selected child frame to the selected parent frame. 
+The frame will remain in the same position in the world. Note the "persist" checkbox.""")
         teach_button = QPushButton("teach")
+        teach_button.setToolTip("""Move the selected frame to the position od the teaching marker.""")
         rename_button = QPushButton("rename")
+        rename_button.setToolTip("""Rename the selected frame with the new name from the line edit. Note the "persist" checkbox.""")
         clone_button = QPushButton("clone")
-        # new_id_line_edit_label = QLabel("new id")
+        clone_button.setToolTip("""Clone the selected frame with the new name provided in the line edit. 
+The clone will spawn at the position where its original is, parented in the parent 
+frame that is currently selected. Note the "persist" checkbox.""")
         new_id_line_edit = QLineEdit("")
+        new_id_line_edit.setToolTip("""Put a new frame id here, or the name for the clone to be spawned.""")
         # combo_1_box_button.setMaximumWidth(80)
-
-        info = QLabel("")
-        info.setMaximumWidth(25)
-        info_symbol = getattr(QStyle, "SP_MessageBoxQuestion")
-        info_icon = self.style().standardIcon(info_symbol)
-        info_pixmap = info_icon.pixmap(QSize(24, 24))
-        info.setPixmap(info_pixmap)
-        info.setToolTip("""query -> Look up the current transformation from the selected parent frame to the selected child frame.
-remove -> Remove the selected child frame from the scene. 
-reparent -> Change the parent of the selected child frame to the selected parent frame. The frame will remain in the same position in the world.
-teach -> Move the selected frame to the position od the teaching marker.
-rename -> Rename the selected frame with the new name provided in the line edit.
-clone -> Clone the selected frame with the new name provided in the line edit. The clone will spawn at the position where
-            its original is, but in the parent frame that is selected.
-NOTE: Checking the "persist" box ensures that the changes made in the current scene are maintained, i.e. they will also be present
-    in the next session. If "persist" is not checked, all changes affect only the currently running session.""")
 
         combo_box_layout.addWidget(query_button, 0, 0)
         combo_box_layout.addWidget(remove_button, 0, 1)
@@ -457,21 +457,31 @@ NOTE: Checking the "persist" box ensures that the changes made in the current sc
         combo_box_layout = QGridLayout()
 
         enable_path_button = QPushButton("enable path")
+        enable_path_button.setToolTip("""Enable the path from the selected parent to the 
+selected child frame. Note the "persist" checkbox.""")
         disable_path_button = QPushButton("disable path")
+        disable_path_button.setToolTip("""Disable the path from the selected parent to the 
+selected child frame. Note the "persist" checkbox.""")
 
         # combo_1_box_label = QLabel("zone")
         # combo_2_box_label = QLabel("path")
 
         set_zone_button = QPushButton("set zone")
+        set_zone_button.setToolTip("""Set the "zone" of the selected frame using the line edit
+on the left. Note the "persist" checkbox.""")
         # combo_1_box_button.setMaximumWidth(280)
         
         reload_button = QPushButton("reload")
+        reload_button.setToolTip("""Reload the scene from the scenario folder specified with its path in the line edit.""")
         # combo_2_box_button.setMaximumWidth(280)
         zone_line_edit = QLineEdit(Callbacks.zone)
         zone_line_edit.setMaximumWidth(90)
+        zone_line_edit.setToolTip("""Put a frame "zone" size here in meters.""")
         scenario_path_line_edit = QLineEdit(Callbacks.scenario_path)
+        scenario_path_line_edit.setToolTip("""Specify the path of the scenario here.""")
         # line_edit_2.setMaximumWidth(313)
         get_all_button = QPushButton("get all")
+        get_all_button.setToolTip("""List all the frames that are currently in the scene.""")
         # combo_3_box_button.setMaximumWidth(80)
 
         combo_box_layout.addWidget(zone_line_edit, 0, 0, 1, 1)
@@ -519,10 +529,14 @@ NOTE: Checking the "persist" box ensures that the changes made in the current sc
 
         marker_size_edit = QLineEdit(Callbacks.marker_size)
         marker_size_edit.setMaximumWidth(185)
+        marker_size_edit.setToolTip("""Put the size of the teaching marker here in meters.""")
 
-        set_size_button = QPushButton("set size")
+        set_size_button = QPushButton("resize")
+        set_size_button.setToolTip("""Set the size of the teaching marker using the line edit.""")
         move_button = QPushButton("move")
+        move_button.setToolTip("""Move the teaching marker to the position of the currently selected child frame.""")
         reset_button = QPushButton("reset")
+        reset_button.setToolTip("""Reset the teaching marker to its original position and size.""")
 
         combo_box_layout.addWidget(marker_size_edit, 0, 0, 1, 1)
         combo_box_layout.addWidget(set_size_button, 0, 1, 1, 1)
@@ -561,6 +575,7 @@ NOTE: Checking the "persist" box ensures that the changes made in the current sc
         self.output.setObjectName("info")
         information_button = QPushButton("clear")
         information_button.setMaximumWidth(80)
+        information_button.setToolTip("""Clear the information text box.""")
         information_box_layout.addWidget(self.output, 0, 0)
         information_box_layout.addWidget(
             information_button, 1, 0, alignment=Qt.AlignRight
