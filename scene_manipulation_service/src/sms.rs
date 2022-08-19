@@ -194,7 +194,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             QosProfile::default(),
         )?;
 
-    let zone_marker_timer = node.create_wall_timer(std::time::Duration::from_millis(50))?;
+    let zone_marker_timer = node.create_wall_timer(std::time::Duration::from_millis(200))?;
     let broadcasted_frames_clone_16 = broadcasted_frames.clone();
     let buffered_frames_clone_16 = buffered_frames.clone();
     tokio::task::spawn(async move {
@@ -1660,7 +1660,7 @@ async fn zone_marker_publisher_callback(
                                         w: 1.0, //frame.1.frame_data.transform.rotation.w,
                                     },
                                 },
-                                lifetime: Duration { sec: 5, nanosec: 0 },
+                                lifetime: Duration { sec: 2, nanosec: 0 },
                                 scale: Vector3 {
                                     x: z,
                                     y: z,
@@ -1714,7 +1714,7 @@ async fn zone_marker_publisher_callback(
                                             z: end_in_world.translation.z,
                                         },
                                     ),
-                                    lifetime: Duration { sec: 5, nanosec: 0 },
+                                    lifetime: Duration { sec: 2, nanosec: 0 },
                                     scale: Vector3 {
                                         x: 0.1,
                                         y: 0.2,

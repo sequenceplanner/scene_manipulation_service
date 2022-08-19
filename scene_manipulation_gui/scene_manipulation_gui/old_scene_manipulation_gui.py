@@ -29,14 +29,12 @@ class Callbacks:
     permanent = False
     scenario_path = ""
     zone = "0.0"
-    marker_size = "2.0"
 
     trigger_refresh = None
     trigger_query = None
     trigger_remove_frame = None
     trigger_rename_frame = None
     trigger_reparent_frame = None
-    trigger_teach_frame = None
     trigger_clone_frame = None
     trigger_reload_scenario = None
     trigger_get_all = None
@@ -51,7 +49,6 @@ class Ros2Node(Node, Callbacks):
         Callbacks.trigger_remove_frame = self.trigger_remove_frame
         Callbacks.trigger_rename_frame = self.trigger_rename_frame
         Callbacks.trigger_reparent_frame = self.trigger_reparent_frame
-        Callbacks.trigger_teach_frame = self.trigger_teach_frame
         Callbacks.trigger_clone_frame = self.trigger_clone_frame
         Callbacks.trigger_reload_scenario = self.trigger_reload_scenario
         Callbacks.trigger_get_all = self.trigger_get_all
@@ -240,17 +237,6 @@ class Ros2Node(Node, Callbacks):
             float(Callbacks.zone)
         )
         Callbacks.information = str(response.success) + ": " + response.info
-    
-    def trigger_teach_frame(self):
-        response = self.manipulate_scene(
-            "teach",
-            Callbacks.child,
-            Callbacks.parent,
-            Callbacks.new_id,
-            Callbacks.transform.transform,
-            float(Callbacks.zone)
-        )
-        Callbacks.information = str(response.success) + ": " + response.info
 
     def trigger_clone_frame(self):
         response = self.manipulate_scene(
@@ -289,269 +275,16 @@ class Window(QWidget, Callbacks):
         QWidget.__init__(self, None)
 
         grid = QGridLayout(self)
-        grid.addWidget(self.make_select_box())
-        grid.addWidget(self.make_actions_box())
+        grid.addWidget(self.make_query_tf_box())
+        grid.addWidget(self.make_remove_box())
+        grid.addWidget(self.make_rename_box())
+        grid.addWidget(self.make_reparent_box())
+        grid.addWidget(self.make_clone_box())
         grid.addWidget(self.make_extras_box())
-        grid.addWidget(self.make_teaching_marker_box())
         grid.addWidget(self.make_information_box())
         self.setLayout(grid)
         self.setWindowTitle("Scene Manipulateion GUI")
         self.resize(600, 900)
-
-    def make_select_box(self):
-        combo_box = QGroupBox("select")
-        # combo_box.setMinimumWidth(300)
-        # combo_box.setMaximumHeight(200)
-
-        combo_box_layout = QGridLayout()
-        combo_1_box_label = QLabel("frame")
-        self.child_select_combo = QComboBox()
-        self.child_select_combo.setMinimumWidth(360)
-        
-
-        combo_2_box_label = QLabel("parent")
-        self.parent_select_combo = QComboBox()
-        self.parent_select_combo.setMinimumWidth(360)
-
-        self.refresh_button = QPushButton("refresh")
-        # self.refresh_button.setMaximumWidth(280)
-
-        self.persist = QCheckBox("persist")
-        self.persist.setChecked(False)
-        self.persist.stateChanged.connect(lambda: persist_box_state_change(self.persist))
-
-        info = QLabel("")
-        info.setMaximumWidth(25)
-        info_symbol = getattr(QStyle, "SP_MessageBoxInformation")
-        info_icon = self.style().standardIcon(info_symbol)
-        info_pixmap = info_icon.pixmap(QSize(24, 24))
-        info.setPixmap(info_pixmap)
-        info.setToolTip("""Hover over objects to reveal information.""")
-#         info.setToolTip("""Select a frame to manipulate or use it to change the scene.
-# If persist is not checked, the changes will only affect the current session.""")
-
-        combo_box_layout.addWidget(combo_1_box_label, 0, 0)
-        combo_box_layout.addWidget(self.child_select_combo, 0, 1)
-        combo_box_layout.addWidget(self.refresh_button, 0, 2, 1, 2)
-        combo_box_layout.addWidget(combo_2_box_label, 1, 0)
-        combo_box_layout.addWidget(self.parent_select_combo, 1, 1)
-        combo_box_layout.addWidget(self.persist, 1, 2)
-        combo_box_layout.addWidget(info, 1, 3)
-        combo_box.setLayout(combo_box_layout)
-
-        def persist_box_state_change(checkbox):
-            if checkbox.isChecked():
-                Callbacks.persist_checked = True
-            else:
-                Callbacks.persist_checked = False
-
-        def combo_1_box_button_clicked():
-            Callbacks.trigger_refresh()
-            self.child_select_combo.clear()
-            self.child_select_combo.addItems(Callbacks.frames)
-            self.parent_select_combo.clear()
-            self.parent_select_combo.addItems(Callbacks.frames)
-
-        self.refresh_button.clicked.connect(combo_1_box_button_clicked)
-
-        return combo_box
-
-    def make_actions_box(self):
-        combo_box = QGroupBox("actions")
-        # combo_box.setMinimumWidth(300)
-        # combo_box.setMaximumHeight(200)
-
-        combo_box_layout = QGridLayout()
-
-        query_button = QPushButton("query")
-        remove_button = QPushButton("remove")
-        reparent_button = QPushButton("reparent")
-        teach_button = QPushButton("teach")
-        rename_button = QPushButton("rename")
-        clone_button = QPushButton("clone")
-        # new_id_line_edit_label = QLabel("new id")
-        new_id_line_edit = QLineEdit("")
-        # combo_1_box_button.setMaximumWidth(80)
-
-        info = QLabel("")
-        info.setMaximumWidth(25)
-        info_symbol = getattr(QStyle, "SP_MessageBoxQuestion")
-        info_icon = self.style().standardIcon(info_symbol)
-        info_pixmap = info_icon.pixmap(QSize(24, 24))
-        info.setPixmap(info_pixmap)
-        info.setToolTip("""query -> Look up the current transformation from the selected parent frame to the selected child frame.
-remove -> Remove the selected child frame from the scene. 
-reparent -> Change the parent of the selected child frame to the selected parent frame. The frame will remain in the same position in the world.
-teach -> Move the selected frame to the position od the teaching marker.
-rename -> Rename the selected frame with the new name provided in the line edit.
-clone -> Clone the selected frame with the new name provided in the line edit. The clone will spawn at the position where
-            its original is, but in the parent frame that is selected.
-NOTE: Checking the "persist" box ensures that the changes made in the current scene are maintained, i.e. they will also be present
-    in the next session. If "persist" is not checked, all changes affect only the currently running session.""")
-
-        combo_box_layout.addWidget(query_button, 0, 0)
-        combo_box_layout.addWidget(remove_button, 0, 1)
-        combo_box_layout.addWidget(reparent_button, 0, 2)
-        combo_box_layout.addWidget(teach_button, 0, 3)
-        # combo_box_layout.addWidget(new_id_line_edit_label, 1, 0)
-        combo_box_layout.addWidget(new_id_line_edit, 1, 0, 1, 2)
-        combo_box_layout.addWidget(rename_button, 1, 2)
-        combo_box_layout.addWidget(clone_button, 1, 3)
-        # combo_box_layout.addWidget(info, 1, 4)
-        combo_box.setLayout(combo_box_layout)
-
-        def query_button_clicked():
-            Callbacks.child = self.child_select_combo.currentText()
-            Callbacks.parent = self.parent_select_combo.currentText()
-            Callbacks.trigger_query()
-            self.output.append(Callbacks.information)
-
-        query_button.clicked.connect(query_button_clicked)
-
-        def remove_button_clicked():
-            Callbacks.child = self.child_select_combo.currentText()
-            Callbacks.trigger_remove_frame()
-            self.output.append(Callbacks.information)
-
-        remove_button.clicked.connect(remove_button_clicked)
-
-        def reparent_button_clicked():
-            Callbacks.child = self.child_select_combo.currentText()
-            Callbacks.parent = self.parent_select_combo.currentText()
-            Callbacks.trigger_reparent_frame()
-            self.output.append(Callbacks.information)
-
-        reparent_button.clicked.connect(reparent_button_clicked)
-
-        def teach_button_clicked():
-            Callbacks.child = self.child_select_combo.currentText()
-            Callbacks.trigger_teach_frame()
-            self.output.append(Callbacks.information)
-
-        teach_button.clicked.connect(teach_button_clicked)
-
-        def rename_button_clicked():
-            Callbacks.child = self.child_select_combo.currentText()
-            Callbacks.new_id = new_id_line_edit.text()
-            Callbacks.trigger_rename_frame()
-            self.output.append(Callbacks.information)
-
-        rename_button.clicked.connect(rename_button_clicked)
-
-        def clone_button_clicked():
-            Callbacks.child = self.child_select_combo.currentText()
-            Callbacks.parent = self.parent_select_combo.currentText()
-            Callbacks.new_id = new_id_line_edit.text()
-            Callbacks.trigger_clone_frame()
-            self.output.append(Callbacks.information)
-
-        clone_button.clicked.connect(clone_button_clicked)
-
-        return combo_box
-
-    def make_extras_box(self):
-        combo_box = QGroupBox("extras")
-        # combo_box.setMinimumWidth(300)
-        # combo_box.setMaximumHeight(100)
-
-        combo_box_layout = QGridLayout()
-
-        enable_path_button = QPushButton("enable path")
-        disable_path_button = QPushButton("disable path")
-
-        # combo_1_box_label = QLabel("zone")
-        # combo_2_box_label = QLabel("path")
-
-        set_zone_button = QPushButton("set zone")
-        # combo_1_box_button.setMaximumWidth(280)
-        
-        reload_button = QPushButton("reload")
-        # combo_2_box_button.setMaximumWidth(280)
-        zone_line_edit = QLineEdit(Callbacks.zone)
-        zone_line_edit.setMaximumWidth(90)
-        scenario_path_line_edit = QLineEdit(Callbacks.scenario_path)
-        # line_edit_2.setMaximumWidth(313)
-        get_all_button = QPushButton("get all")
-        # combo_3_box_button.setMaximumWidth(80)
-
-        combo_box_layout.addWidget(zone_line_edit, 0, 0, 1, 1)
-        # combo_box_layout.addWidget(combo_1_box_label, 0, 0)
-        
-        combo_box_layout.addWidget(set_zone_button, 0, 1, 1, 1)
-        combo_box_layout.addWidget(enable_path_button, 0, 2, 1, 2)
-        combo_box_layout.addWidget(disable_path_button, 0, 4, 1, 2)
-        
-        # combo_box_layout.addWidget(combo_2_box_label, 1, 0)
-        combo_box_layout.addWidget(scenario_path_line_edit, 1, 0, 1, 4)
-        combo_box_layout.addWidget(reload_button, 1, 4, 1, 1)
-        combo_box_layout.addWidget(get_all_button, 1, 5, 1, 1)
-        
-        combo_box.setLayout(combo_box_layout)
-
-        def combo_1_box_button_clicked():
-            Callbacks.zone = zone_line_edit.text()
-            Callbacks.information = "Zone is set to " + Callbacks.zone
-            self.output.append(Callbacks.information)
-
-        set_zone_button.clicked.connect(combo_1_box_button_clicked)
-
-        def combo_2_box_button_clicked():
-            Callbacks.scenario_path = scenario_path_line_edit.text()
-            Callbacks.trigger_reload_scenario()
-            self.output.append(Callbacks.information)
-
-        reload_button.clicked.connect(combo_2_box_button_clicked)
-
-        def combo_3_box_button_clicked():
-            Callbacks.trigger_get_all()
-            self.output.append(Callbacks.information)
-
-        get_all_button.clicked.connect(combo_3_box_button_clicked)
-
-        return combo_box
-
-    def make_teaching_marker_box(self):
-        combo_box = QGroupBox("marker")
-        # combo_box.setMinimumWidth(300)
-        # combo_box.setMaximumHeight(100)
-
-        combo_box_layout = QGridLayout()
-
-        marker_size_edit = QLineEdit(Callbacks.marker_size)
-        marker_size_edit.setMaximumWidth(185)
-
-        set_size_button = QPushButton("set size")
-        move_button = QPushButton("move")
-        reset_button = QPushButton("reset")
-
-        combo_box_layout.addWidget(marker_size_edit, 0, 0, 1, 1)
-        combo_box_layout.addWidget(set_size_button, 0, 1, 1, 1)
-        combo_box_layout.addWidget(move_button, 0, 2, 1, 1)
-        combo_box_layout.addWidget(reset_button, 0, 3, 1, 1)
-        
-        combo_box.setLayout(combo_box_layout)
-
-        # def combo_1_box_button_clicked():
-        #     Callbacks.zone = zone_line_edit.text()
-        #     Callbacks.information = "Zone is set to " + Callbacks.zone
-        #     self.output.append(Callbacks.information)
-
-        # set_zone_button.clicked.connect(combo_1_box_button_clicked)
-
-        # def combo_2_box_button_clicked():
-        #     Callbacks.scenario_path = scenario_path_line_edit.text()
-        #     Callbacks.trigger_reload_scenario()
-        #     self.output.append(Callbacks.information)
-
-        # reload_button.clicked.connect(combo_2_box_button_clicked)
-
-        # def combo_3_box_button_clicked():
-        #     Callbacks.trigger_get_all()
-        #     self.output.append(Callbacks.information)
-
-        # get_all_button.clicked.connect(combo_3_box_button_clicked)
-
-        return combo_box
 
     def make_information_box(self):
         information_box = QGroupBox("info")
@@ -573,6 +306,286 @@ NOTE: Checking the "persist" box ensures that the changes made in the current sc
         information_button.clicked.connect(information_button_clicked)
 
         return information_box
+
+    def make_query_tf_box(self):
+        combo_box = QGroupBox("")
+        combo_box.setMinimumWidth(300)
+        combo_box.setMaximumHeight(100)
+
+        combo_box_layout = QGridLayout()
+
+        combo_1_box_label = QLabel("child")
+        combo_2_box_label = QLabel("parent")
+
+        combo_1 = QComboBox()
+
+        combo_1_box_button = QPushButton("refresh")
+        combo_1_box_button.setMaximumWidth(280)
+        combo_2 = QComboBox()
+        combo_2.setMinimumWidth(400)
+        combo_2_box_button = QPushButton("query")
+        combo_2_box_button.setMaximumWidth(80)
+
+        combo_box_layout.addWidget(combo_1_box_label, 0, 0)
+        combo_box_layout.addWidget(combo_1, 0, 1)
+        combo_box_layout.addWidget(combo_1_box_button, 0, 2)
+        combo_box_layout.addWidget(combo_2_box_label, 1, 0)
+        combo_box_layout.addWidget(combo_2, 1, 1)
+        combo_box_layout.addWidget(combo_2_box_button, 1, 2)
+        combo_box.setLayout(combo_box_layout)
+
+        def combo_1_box_button_clicked():
+            Callbacks.trigger_refresh()
+            combo_1.clear()
+            combo_1.addItems(Callbacks.frames)
+            combo_2.clear()
+            combo_2.addItems(Callbacks.frames)
+
+        combo_1_box_button.clicked.connect(combo_1_box_button_clicked)
+
+        def combo_2_box_button_clicked():
+            Callbacks.child = combo_1.currentText()
+            Callbacks.parent = combo_2.currentText()
+            Callbacks.trigger_query()
+            self.output.append(Callbacks.information)
+
+        combo_2_box_button.clicked.connect(combo_2_box_button_clicked)
+
+        return combo_box
+
+    def make_remove_box(self):
+        combo_box = QGroupBox("")
+        combo_box.setMinimumWidth(300)
+        combo_box.setMaximumHeight(100)
+
+        combo_box_layout = QGridLayout()
+
+        combo_2_box_label = QLabel("child")
+
+        combo_1_box_button = QPushButton("refresh")
+        combo_1_box_button.setMaximumWidth(280)
+        combo_2 = QComboBox()
+        combo_2.setMinimumWidth(313)
+        combo_2_box_button = QPushButton("remove")
+        combo_2_box_button.setMaximumWidth(80)
+
+        combo_box_layout.addWidget(combo_2_box_label, 0, 0)
+        combo_box_layout.addWidget(combo_2, 0, 1)
+        combo_box_layout.addWidget(combo_1_box_button, 0, 2)
+        combo_box_layout.addWidget(combo_2_box_button, 0, 3)
+        combo_box.setLayout(combo_box_layout)
+
+        def combo_1_box_button_clicked():
+            Callbacks.trigger_refresh()
+            combo_2.clear()
+            combo_2.addItems(Callbacks.frames)
+
+        combo_1_box_button.clicked.connect(combo_1_box_button_clicked)
+
+        def combo_2_box_button_clicked():
+            Callbacks.child = combo_2.currentText()
+            Callbacks.trigger_remove_frame()
+            self.output.append(Callbacks.information)
+
+        combo_2_box_button.clicked.connect(combo_2_box_button_clicked)
+
+        return combo_box
+
+    def make_rename_box(self):
+        combo_box = QGroupBox("")
+        combo_box.setMinimumWidth(300)
+        combo_box.setMaximumHeight(200)
+
+        combo_box_layout = QGridLayout()
+
+        combo_1_box_label = QLabel("child")
+        line_edit_1_box_label = QLabel("new id")
+
+        combo_1 = QComboBox()
+
+        line_edit_1 = QLineEdit("")
+        line_edit_1.setMaximumWidth(400)
+        combo_1.setMaximumWidth(400)
+        combo_1_box_button = QPushButton("refresh")
+        combo_1_box_button.setMaximumWidth(280)
+        combo_2_box_button = QPushButton("rename")
+        combo_2_box_button.setMaximumWidth(280)
+
+        combo_box_layout.addWidget(combo_1_box_label, 0, 0)
+        combo_box_layout.addWidget(combo_1, 0, 1)
+        combo_box_layout.addWidget(combo_1_box_button, 0, 2)
+        combo_box_layout.addWidget(line_edit_1_box_label, 1, 0)
+        combo_box_layout.addWidget(line_edit_1, 1, 1)
+        combo_box_layout.addWidget(combo_2_box_button, 1, 2)
+        combo_box.setLayout(combo_box_layout)
+
+        def combo_1_box_button_clicked():
+            Callbacks.trigger_refresh()
+            combo_1.clear()
+            combo_1.addItems(Callbacks.frames)
+
+        combo_1_box_button.clicked.connect(combo_1_box_button_clicked)
+
+        def combo_2_box_button_clicked():
+            Callbacks.child = combo_1.currentText()
+            Callbacks.new_id = line_edit_1.text()
+            Callbacks.trigger_rename_frame()
+            self.output.append(Callbacks.information)
+
+        combo_2_box_button.clicked.connect(combo_2_box_button_clicked)
+
+        return combo_box
+
+    def make_reparent_box(self):
+        combo_box = QGroupBox("")
+        combo_box.setMinimumWidth(300)
+        combo_box.setMaximumHeight(100)
+
+        combo_box_layout = QGridLayout()
+
+        combo_1_box_label = QLabel("child")
+        combo_2_box_label = QLabel("to")
+
+        combo_1 = QComboBox()
+
+        combo_1_box_button = QPushButton("refresh")
+        combo_1_box_button.setMaximumWidth(280)
+        combo_2 = QComboBox()
+        combo_2.setMinimumWidth(400)
+        combo_2_box_button = QPushButton("reparent")
+        combo_2_box_button.setMaximumWidth(80)
+
+        combo_box_layout.addWidget(combo_1_box_label, 0, 0)
+        combo_box_layout.addWidget(combo_1, 0, 1)
+        combo_box_layout.addWidget(combo_1_box_button, 0, 2)
+        combo_box_layout.addWidget(combo_2_box_label, 1, 0)
+        combo_box_layout.addWidget(combo_2, 1, 1)
+        combo_box_layout.addWidget(combo_2_box_button, 1, 2)
+        combo_box.setLayout(combo_box_layout)
+
+        def combo_1_box_button_clicked():
+            Callbacks.trigger_refresh()
+            combo_1.clear()
+            combo_1.addItems(Callbacks.frames)
+            combo_2.clear()
+            combo_2.addItems(Callbacks.frames)
+
+        combo_1_box_button.clicked.connect(combo_1_box_button_clicked)
+
+        def combo_2_box_button_clicked():
+            Callbacks.child = combo_1.currentText()
+            Callbacks.parent = combo_2.currentText()
+            Callbacks.trigger_reparent_frame()
+            self.output.append(Callbacks.information)
+
+        combo_2_box_button.clicked.connect(combo_2_box_button_clicked)
+
+        return combo_box
+
+    def make_clone_box(self):
+        combo_box = QGroupBox("")
+        combo_box.setMinimumWidth(300)
+        combo_box.setMaximumHeight(200)
+
+        combo_box_layout = QGridLayout()
+
+        line_edit_1 = QLineEdit("")
+        line_edit_1.setMaximumWidth(400)
+        combo_1_box_label = QLabel("child")
+        combo_2_box_label = QLabel("parent")
+        line_edit_1_box_label = QLabel("clone")
+
+        combo_1 = QComboBox()
+
+        combo_1_box_button = QPushButton("refresh")
+        combo_1_box_button.setMaximumWidth(280)
+        combo_2 = QComboBox()
+        combo_2.setMinimumWidth(400)
+        combo_2_box_button = QPushButton("clone")
+        combo_2_box_button.setMaximumWidth(80)
+
+        combo_box_layout.addWidget(combo_1_box_label, 0, 0)
+        combo_box_layout.addWidget(combo_1, 0, 1)
+        combo_box_layout.addWidget(combo_1_box_button, 1, 2)
+        combo_box_layout.addWidget(combo_2_box_label, 1, 0)
+        combo_box_layout.addWidget(combo_2, 1, 1)
+        combo_box_layout.addWidget(combo_2_box_button, 2, 2)
+        combo_box_layout.addWidget(line_edit_1_box_label,2, 0)
+        combo_box_layout.addWidget(line_edit_1, 2, 1)
+        combo_box.setLayout(combo_box_layout)
+
+        def combo_1_box_button_clicked():
+            Callbacks.trigger_refresh()
+            combo_1.clear()
+            combo_1.addItems(Callbacks.frames)
+            combo_2.clear()
+            combo_2.addItems(Callbacks.frames)
+
+        combo_1_box_button.clicked.connect(combo_1_box_button_clicked)
+
+        def combo_2_box_button_clicked():
+            Callbacks.child = combo_1.currentText()
+            Callbacks.parent = combo_2.currentText()
+            Callbacks.new_id = line_edit_1.text()
+            Callbacks.trigger_clone_frame()
+            self.output.append(Callbacks.information)
+
+        combo_2_box_button.clicked.connect(combo_2_box_button_clicked)
+
+        return combo_box
+
+    def make_extras_box(self):
+        combo_box = QGroupBox("")
+        combo_box.setMinimumWidth(300)
+        combo_box.setMaximumHeight(100)
+
+        combo_box_layout = QGridLayout()
+
+        combo_1_box_label = QLabel("zone")
+        combo_2_box_label = QLabel("path")
+
+        combo_1_box_button = QPushButton("set")
+        combo_1_box_button.setMaximumWidth(280)
+        
+        combo_2_box_button = QPushButton("reload")
+        combo_2_box_button.setMaximumWidth(280)
+        line_edit_1 = QLineEdit(Callbacks.zone)
+        line_edit_1.setMaximumWidth(313)
+        line_edit_2 = QLineEdit(Callbacks.scenario_path)
+        line_edit_2.setMaximumWidth(313)
+        combo_3_box_button = QPushButton("get_all")
+        combo_3_box_button.setMaximumWidth(80)
+
+        combo_box_layout.addWidget(combo_1_box_label, 0, 0)
+        combo_box_layout.addWidget(line_edit_1, 0, 1)
+        combo_box_layout.addWidget(combo_1_box_button, 0, 2)
+        combo_box_layout.addWidget(combo_2_box_label, 1, 0)
+        combo_box_layout.addWidget(line_edit_2, 1, 1)
+        combo_box_layout.addWidget(combo_2_box_button, 1, 2)
+        combo_box_layout.addWidget(combo_3_box_button, 1, 3)
+        combo_box.setLayout(combo_box_layout)
+
+        def combo_1_box_button_clicked():
+            Callbacks.zone = line_edit_1.text()
+            Callbacks.information = "Zone is set to " + Callbacks.zone
+            self.output.append(Callbacks.information)
+
+        combo_1_box_button.clicked.connect(combo_1_box_button_clicked)
+
+        def combo_2_box_button_clicked():
+            Callbacks.scenario_path = line_edit_2.text()
+            Callbacks.trigger_reload_scenario()
+            self.output.append(Callbacks.information)
+
+        combo_2_box_button.clicked.connect(combo_2_box_button_clicked)
+
+        def combo_3_box_button_clicked():
+            Callbacks.trigger_get_all()
+            self.output.append(Callbacks.information)
+
+        combo_3_box_button.clicked.connect(combo_3_box_button_clicked)
+
+        return combo_box
 
 
 def main(args=None):
