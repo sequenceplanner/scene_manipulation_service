@@ -1,6 +1,6 @@
 # Request
 
-# What to do with the frame [add, move, clone, reparent, remove, rename]
+# What to do with the frame [add, move, clone, reparent, remove, rename, teach]
 string command
 
 # Name of the frame that is to be manipulated

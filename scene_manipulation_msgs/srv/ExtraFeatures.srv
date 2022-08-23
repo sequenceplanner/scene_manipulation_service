@@ -16,6 +16,7 @@ string child_frame_id
 string parent_frame_id
 string scenario_path
 float32 size
+bool persist
 
 ---
 

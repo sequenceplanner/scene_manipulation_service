@@ -3,7 +3,7 @@ use glam::{DAffine3, DQuat, DVec3};
 use r2r::builtin_interfaces::msg::{Duration, Time};
 use r2r::geometry_msgs::msg::{Point, Pose, Quaternion, Transform, TransformStamped, Vector3};
 use r2r::scene_manipulation_msgs::srv::{
-    GetAllTransforms, LookupTransform, ManipulateScene, ExtraFeatures,
+    ExtraFeatures, GetAllTransforms, LookupTransform, ManipulateScene,
 };
 use r2r::std_msgs::msg::{ColorRGBA, Header};
 use r2r::tf2_msgs::msg::TFMessage;
@@ -12,10 +12,10 @@ use r2r::{ParameterValue, QosProfile, ServiceRequest};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
-use std::{fmt, default};
 use std::fs::{self, File};
 use std::io::BufReader;
 use std::sync::{Arc, Mutex};
+use std::{default, fmt};
 
 pub static NODE_ID: &'static str = "scene_manipulation_service";
 pub static STATIC_BROADCAST_RATE: u64 = 1000;
@@ -33,7 +33,7 @@ pub struct FrameData {
     pub active: bool,
     pub zone: Option<f64>,
     pub next: Option<Vec<String>>,
-    pub time_stamp: Option<Time>
+    pub time_stamp: Option<Time>,
 }
 
 // the testing module
@@ -96,8 +96,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    // let path = Arc::new(Mutex::new(path_param.clone()));
-    let scenario_res = list_frames_in_dir(&path_param, true).await;
+    let scenario_res = list_frames_in_dir(&path_param).await;
 
     let init_loaded = match scenario_res {
         Ok(scenario) => {
@@ -154,28 +153,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
         node.create_service::<LookupTransform::Service>("lookup_transform")?;
 
     // offer a service for extra features
-    let extra_features_service =
-        node.create_service::<ExtraFeatures::Service>("extra_features")?;
+    let extra_features_service = node.create_service::<ExtraFeatures::Service>("extra_features")?;
 
     // offer a service to get all frames from tf (local buffer)
     let get_all_transforms_service =
         node.create_service::<GetAllTransforms::Service>("get_all_transforms")?;
 
+    // publish the visualization markers for zone size for each frame
     let zone_marker_publisher = node
         .create_publisher::<r2r::visualization_msgs::msg::MarkerArray>(
             "zone_markers",
             QosProfile::default(),
         )?;
 
-    let zone_marker_timer = node.create_wall_timer(std::time::Duration::from_millis(200))?;
+    // publish the visualization markers enabled paths for each frame's 'next' pair
+    let path_marker_publisher = node
+        .create_publisher::<r2r::visualization_msgs::msg::MarkerArray>(
+            "path_markers",
+            QosProfile::default(),
+        )?;
+
+    let marker_timer = node.create_wall_timer(std::time::Duration::from_millis(200))?;
     let broadcasted_frames_clone_16 = broadcasted_frames.clone();
     let buffered_frames_clone_16 = buffered_frames.clone();
     tokio::task::spawn(async move {
-        match zone_marker_publisher_callback(
+        match marker_publisher_callback(
             zone_marker_publisher,
+            path_marker_publisher,
             &broadcasted_frames_clone_16,
             &buffered_frames_clone_16,
-            zone_marker_timer,
+            marker_timer,
         )
         .await
         {
@@ -214,19 +221,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         };
     });
 
-    // // spawn a tokio task to handle reloading the scene when a new frame is to be added manually
-    // // actually, the folder callback should always read the folder and not only when there is a change
-    // let broadcasted_frames_clone_3 = broadcasted_frames.clone();
-    // let path_clone_1 = path.clone();
-    // tokio::task::spawn(async move {
-    //     match folder_manupulation_callback(reload_timer, &broadcasted_frames_clone_3, &path_clone_1)
-    //         .await
-    //     {
-    //         Ok(()) => (),
-    //         Err(e) => r2r::log_error!(NODE_ID, "Active frame broadcaster failed with: '{}'.", e),
-    //     };
-    // });
-
     // offer a service to manipulate the scene
     let broadcasted_frames_clone_4 = broadcasted_frames.clone();
     let buffered_frames_clone_1 = buffered_frames.clone();
@@ -262,7 +256,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // offer a service for clients that want to load/reload the scenario
     let broadcasted_frames_clone_5 = broadcasted_frames.clone();
     tokio::task::spawn(async move {
-        let result = extra_features_server(extra_features_service, &broadcasted_frames_clone_5).await;
+        let result =
+            extra_features_server(extra_features_service, &broadcasted_frames_clone_5).await;
         match result {
             Ok(()) => r2r::log_info!(NODE_ID, "Load Scenario Service call succeeded."),
             Err(e) => r2r::log_error!(NODE_ID, "Load Scenario Service call failed with: {}.", e),
@@ -327,10 +322,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn list_frames_in_dir(
-    path: &str,
-    launch: bool,
-) -> Result<Vec<String>, Box<dyn std::error::Error + Send>> {
+async fn list_frames_in_dir(path: &str) -> Result<Vec<String>, Box<dyn std::error::Error + Send>> {
     let mut scenario = vec![];
     match fs::read_dir(path) {
         Ok(dir) => dir.for_each(|file| match file {
@@ -364,9 +356,9 @@ async fn load_scenario(scenario: &Vec<String>) -> HashMap<String, FrameData> {
 
     // add the world frame explicitly so that transforms can be looked up to and from it
     frame_datas.insert(
-        "world".to_string(), 
-        FrameData { 
-            parent_frame_id: "world_origin".to_string(), 
+        "world".to_string(),
+        FrameData {
+            parent_frame_id: "world_origin".to_string(),
             child_frame_id: "world".to_string(),
             active: false,
             transform: Transform {
@@ -378,19 +370,19 @@ async fn load_scenario(scenario: &Vec<String>) -> HashMap<String, FrameData> {
                 },
                 translation: Vector3 {
                     ..Default::default()
-                }
+                },
             },
             ..Default::default()
-        }
+        },
     );
-    
+
     scenario.iter().for_each(|x| match File::open(x) {
         Ok(file) => {
             let reader = BufReader::new(file);
             match serde_json::from_reader(reader) {
                 Ok::<FrameData, _>(json) => {
                     frame_datas.insert(json.child_frame_id.clone(), json.clone());
-                },
+                }
                 Err(e) => {
                     r2r::log_warn!(NODE_ID, "Serde failed with: '{}'.", e);
                 }
@@ -401,60 +393,7 @@ async fn load_scenario(scenario: &Vec<String>) -> HashMap<String, FrameData> {
     frame_datas
 }
 
-// a service that enables you to reload the scenario while it is running
-// this is convenient when working on the .json frame files manually
-// TODO: add a loop check before adding frames
-async fn extra_features_server(
-    mut service: impl Stream<Item = ServiceRequest<ExtraFeatures::Service>> + Unpin,
-    broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    loop {
-        match service.next().await {
-            Some(request) => {
-            //     let scenario_res = list_frames_in_dir(&request.message.scenario_path, true).await;
-            //     match scenario_res {
-            //         Ok(scenario) => {
-            //             let loaded = load_scenario(&scenario).await;
-            //             r2r::log_info!(
-            //                 NODE_ID,
-            //                 "(Re)loaded frames in the scene: '{:?}'.",
-            //                 loaded.keys()
-            //             );
-            //             let mut local_broadcasted_frames =
-            //                 broadcasted_frames.lock().unwrap().clone();
-            //             for x in &loaded {
-            //                 local_broadcasted_frames.insert(x.0.clone(), x.1.clone());
-            //             }
-            //             *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
-            //             request
-            //                 .respond(ReloadScenario::Response {
-            //                     success: true,
-            //                     info: format!(
-            //                         "(Re)loaded frames in the scene: '{:?}'.",
-            //                         loaded.keys()
-            //                     )
-            //                     .to_string(),
-            //                 })
-            //                 .expect("Could not send service response.");
-            //             continue;
-            //         }
-            //         Err(e) => {
-            //             request
-            //                 .respond(ReloadScenario::Response {
-            //                     success: false,
-            //                     info: format!("(Re)loading the scenario failed with: '{:?}'.", e)
-            //                         .to_string(),
-            //                 })
-            //                 .expect("Could not send service response.");
-            //             continue;
-            //         }
-            //     }
-            }
-            None => (),
-        }
-    }
-}
-
+// TODO: sort out information in the messages when responding
 async fn scene_manipulation_server(
     mut service: impl Stream<Item = ServiceRequest<ManipulateScene::Service>> + Unpin,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -518,21 +457,72 @@ async fn scene_manipulation_server(
                         .expect("Could not send service response.");
                     continue;
                 }
-                // "teach" => {
-                //     r2r::log_info!(NODE_ID, "Got 'clone' request: {:?}.", request.message);
-                //     let response =
-                //         teach_frame(&request.message, &broadcasted_frames, &buffered_frames).await;
-                //     request
-                //         .respond(response)
-                //         .expect("Could not send service response.");
-                //     continue;
-                // }
+                "teach" => {
+                    r2r::log_info!(NODE_ID, "Got 'teach' request: {:?}.", request.message);
+                    let response =
+                        teach_frame(&request.message, &broadcasted_frames, &buffered_frames).await;
+                    request
+                        .respond(response)
+                        .expect("Could not send service response.");
+                    continue;
+                }
                 _ => {
                     r2r::log_error!(NODE_ID, "No such command.");
                     continue;
                 }
             },
             None => {}
+        }
+    }
+}
+
+async fn extra_features_server(
+    mut service: impl Stream<Item = ServiceRequest<ExtraFeatures::Service>> + Unpin,
+    broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    loop {
+        match service.next().await {
+            Some(request) => {
+                //     let scenario_res = list_frames_in_dir(&request.message.scenario_path, true).await;
+                //     match scenario_res {
+                //         Ok(scenario) => {
+                //             let loaded = load_scenario(&scenario).await;
+                //             r2r::log_info!(
+                //                 NODE_ID,
+                //                 "(Re)loaded frames in the scene: '{:?}'.",
+                //                 loaded.keys()
+                //             );
+                //             let mut local_broadcasted_frames =
+                //                 broadcasted_frames.lock().unwrap().clone();
+                //             for x in &loaded {
+                //                 local_broadcasted_frames.insert(x.0.clone(), x.1.clone());
+                //             }
+                //             *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
+                //             request
+                //                 .respond(ReloadScenario::Response {
+                //                     success: true,
+                //                     info: format!(
+                //                         "(Re)loaded frames in the scene: '{:?}'.",
+                //                         loaded.keys()
+                //                     )
+                //                     .to_string(),
+                //                 })
+                //                 .expect("Could not send service response.");
+                //             continue;
+                //         }
+                //         Err(e) => {
+                //             request
+                //                 .respond(ReloadScenario::Response {
+                //                     success: false,
+                //                     info: format!("(Re)loading the scenario failed with: '{:?}'.", e)
+                //                         .to_string(),
+                //                 })
+                //                 .expect("Could not send service response.");
+                //             continue;
+                //         }
+                //     }
+            }
+            None => (),
         }
     }
 }
@@ -752,6 +742,7 @@ async fn add_frame(
 }
 
 // TODO: maybe remove the frame also from the buffered_frames
+// TODO: a frame needs a name, can't be blank ""
 async fn remove_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -763,20 +754,29 @@ async fn remove_frame(
     fn inner(
         message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
         broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+        buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     ) -> ManipulateScene::Response {
         let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
+        let mut local_buffered_frames = buffered_frames.lock().unwrap().clone();
         match local_broadcasted_frames.get(&message.child_frame_id) {
             Some(frame) => match frame.active {
                 true => match local_broadcasted_frames.remove(&message.child_frame_id) {
-                    Some(_) => {
-                        *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
-                        success_response(&format!(
-                            "Frame '{}' removed from the scene.",
+                    Some(_) => match local_buffered_frames.remove(&message.child_frame_id) {
+                        Some(_) => {
+                            *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
+                            *buffered_frames.lock().unwrap() = local_buffered_frames;
+                            success_response(&format!(
+                                "Frame '{}' removed from the scene.",
+                                message.child_frame_id
+                            ))
+                        },
+                        None => error_response(&format!(
+                            "Failed to remove frame '{}' from the tf buffer.",
                             message.child_frame_id
-                        ))
-                    }
+                        )),
+                    },
                     None => error_response(&format!(
-                        "Failed to remove frame '{}' from the scene.",
+                        "Failed to remove frame '{}' from the broadcast buffer.",
                         message.child_frame_id
                     )),
                 },
@@ -794,13 +794,13 @@ async fn remove_frame(
                     tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
                     match local_buffered_frames.contains_key(&message.child_frame_id) {
                         false => error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
-                        true => inner(message, broadcasted_frames)
+                        true => inner(message, broadcasted_frames, buffered_frames)
                     }
                 }
             },
             true => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => error_response("Frame exists in the tf, but it can't be removed since it is not published by sms."),
-                true => inner(message, broadcasted_frames)
+                true => inner(message, broadcasted_frames, buffered_frames)
             }
         },
         true => error_response("Frame 'world' is reserved as the universal tree root."),
@@ -812,8 +812,17 @@ async fn rename_frame(
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
 ) -> ManipulateScene::Response {
-    // let local_buffered_frames = buffered_frames.lock().unwrap().clone();
     let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
+
+    // let saved_transform = match lookup_transform(
+    //     &message.parent_frame_id,
+    //     &message.child_frame_id,
+    //     &buffered_frames,
+    // )
+    // .await {
+    //     Some(t) => t,
+    //     None => Transform::default()
+    // };
 
     let remove_response = remove_frame(
         &ManipulateScene::Request {
@@ -838,10 +847,10 @@ async fn rename_frame(
                 let add_response = add_frame(
                     &ManipulateScene::Request {
                         command: "add".to_string(),
-                        child_frame_id: message.child_frame_id.to_string(),
+                        child_frame_id: message.new_frame_id.to_string(),
                         parent_frame_id: frame.parent_frame_id.to_string(),
                         new_frame_id: message.new_frame_id.to_string(),
-                        transform: message.transform.clone(),
+                        transform: frame.transform.clone(),
                     },
                     &broadcasted_frames,
                     &buffered_frames,
@@ -890,6 +899,52 @@ async fn move_frame(
     }
 }
 
+async fn teach_frame(
+    message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
+    broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+    buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+) -> ManipulateScene::Response {
+    let local_buffered_frames = buffered_frames.lock().unwrap().clone();
+    let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
+
+    async fn inner(
+        message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
+        broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+        buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+    ) -> ManipulateScene::Response {
+        match lookup_transform(
+            &message.parent_frame_id,
+            "teaching_marker",
+            &buffered_frames,
+        )
+        .await
+        {
+            None => error_response("Failed to lookup transform."),
+            Some(transform) => add_with_lookup_tf(message, broadcasted_frames, transform),
+        }
+    }
+
+    match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" {
+        false => match local_buffered_frames.contains_key(&message.child_frame_id) {
+            false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
+                false => error_response("Frame doesn't exist."),
+                true => {
+                    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+                    match local_buffered_frames.contains_key(&message.child_frame_id) {
+                        false => error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
+                        true => inner(&message, &broadcasted_frames, &buffered_frames).await
+                    }
+                }
+            }
+            true => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
+                false => error_response("Frame exists in the tf, but it can't be moved since it is not published by this broadcaster."),
+                true => inner(&message, &broadcasted_frames, &buffered_frames).await
+            }
+        },
+        true => error_response("Frame 'world' is reserved as the universal tree root."),        
+    }
+}
+
 async fn reparent_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -921,7 +976,7 @@ async fn reparent_frame(
             )
             .await
             {
-                None => error_response("Frailed to lookup transform."),
+                None => error_response("Failed to lookup transform."),
                 Some(transform) => add_with_lookup_tf(message, broadcasted_frames, transform),
             },
             (true, cause) => error_response(&format!(
@@ -984,7 +1039,7 @@ async fn clone_frame(
             )
             .await
             {
-                None => error_response("Frailed to lookup transform."),
+                None => error_response("Failed to lookup transform."),
                 Some(transform) => add_with_lookup_tf(&new_message, broadcasted_frames, transform),
             },
             (true, cause) => error_response(&format!(
@@ -1027,21 +1082,19 @@ async fn static_frame_broadcaster_callback(
         let transforms_local = frames.lock().unwrap().clone();
         let mut updated_transforms = vec![];
 
-        transforms_local
-            .iter()
-            .for_each(|(_, v)| match v.active {
-                false => {
-                    updated_transforms.push(TransformStamped {
-                        header: Header {
-                            stamp: time_stamp.clone(),
-                            frame_id: v.parent_frame_id.clone(),
-                        },
-                        child_frame_id: v.child_frame_id.clone(),
-                        transform: v.transform.clone(),
-                    });
-                }
-                true => (),
-            });
+        transforms_local.iter().for_each(|(_, v)| match v.active {
+            false => {
+                updated_transforms.push(TransformStamped {
+                    header: Header {
+                        stamp: time_stamp.clone(),
+                        frame_id: v.parent_frame_id.clone(),
+                    },
+                    child_frame_id: v.child_frame_id.clone(),
+                    transform: v.transform.clone(),
+                });
+            }
+            true => (),
+        });
 
         let msg = TFMessage {
             transforms: updated_transforms,
@@ -1076,21 +1129,19 @@ async fn active_frame_broadcaster_callback(
         let transforms_local = frames.lock().unwrap().clone();
         let mut updated_transforms = vec![];
 
-        transforms_local
-            .iter()
-            .for_each(|(_, v)| match v.active {
-                true => {
-                    updated_transforms.push(TransformStamped {
-                        header: Header {
-                            stamp: time_stamp.clone(),
-                            frame_id: v.parent_frame_id.clone(),
-                        },
-                        child_frame_id: v.child_frame_id.clone(),
-                        transform: v.transform.clone(),
-                    });
-                }
-                false => (),
-            });
+        transforms_local.iter().for_each(|(_, v)| match v.active {
+            true => {
+                updated_transforms.push(TransformStamped {
+                    header: Header {
+                        stamp: time_stamp.clone(),
+                        frame_id: v.parent_frame_id.clone(),
+                    },
+                    child_frame_id: v.child_frame_id.clone(),
+                    transform: v.transform.clone(),
+                });
+            }
+            false => (),
+        });
 
         let msg = TFMessage {
             transforms: updated_transforms,
@@ -1130,7 +1181,7 @@ async fn active_tf_listener_callback(
                             active: true,
                             time_stamp: Some(t.header.stamp.clone()),
                             zone: None,
-                            next: None
+                            next: None,
                         },
                     );
                 });
@@ -1163,7 +1214,7 @@ async fn static_tf_listener_callback(
                             active: true,
                             time_stamp: Some(t.header.stamp.clone()),
                             zone: None,
-                            next: None
+                            next: None,
                         },
                     );
                 });
@@ -1187,26 +1238,24 @@ async fn maintain_buffer(
         let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
         let now = clock.get_now().unwrap();
         let current_time = r2r::Clock::to_builtin_time(&now);
-        frames_local
-            .iter()
-            .for_each(|(k, v)| match v.active {
-                true => match &v.time_stamp {
-                    Some(stamp) => match current_time.sec > stamp.sec + ACTIVE_FRAME_LIFETIME {
-                        true => {
-                            frames_local_reduced.remove(k);
-                        }
-                        false => (), // do nothing if the frame is fresh
-                    }
-                    None => {
+        frames_local.iter().for_each(|(k, v)| match v.active {
+            true => match &v.time_stamp {
+                Some(stamp) => match current_time.sec > stamp.sec + ACTIVE_FRAME_LIFETIME {
+                    true => {
                         frames_local_reduced.remove(k);
-                        r2r::log_warn!(
-                            NODE_ID,
-                            "Active frame shouldn't have 'None' timestamp. Investigate."
-                        );
                     }
+                    false => (), // do nothing if the frame is fresh
+                },
+                None => {
+                    frames_local_reduced.remove(k);
+                    r2r::log_warn!(
+                        NODE_ID,
+                        "Active frame shouldn't have 'None' timestamp. Investigate."
+                    );
                 }
-                false => (), // maybe we should remove static frames older than STATIC_FRAME_LIFETIME
-            });
+            },
+            false => (), // maybe we should remove static frames older than STATIC_FRAME_LIFETIME
+        });
         *buffered_frames.lock().unwrap() = frames_local_reduced;
         timer.tick().await?;
     }
@@ -1424,79 +1473,72 @@ fn check_would_produce_cycle(
     frames: &HashMap<String, FrameData>,
 ) -> (bool, String) {
     let mut frames_local = frames.clone();
-    frames_local.insert(
-        frame.child_frame_id.clone(),
-        frame.clone()
-    );
+    frames_local.insert(frame.child_frame_id.clone(), frame.clone());
     is_cyclic_all(&frames_local)
 }
 
-async fn zone_marker_publisher_callback(
-    publisher: r2r::Publisher<MarkerArray>,
+async fn marker_publisher_callback(
+    zone_publisher: r2r::Publisher<MarkerArray>,
+    path_publisher: r2r::Publisher<MarkerArray>,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     mut timer: r2r::Timer,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
-        let mut markers: Vec<Marker> = vec![];
+        let mut zone_markers: Vec<Marker> = vec![];
+        let mut path_markers: Vec<Marker> = vec![];
         let frames_local = broadcasted_frames.lock().unwrap().clone();
         let mut id = 0;
         for frame in frames_local {
             match frame.1.zone {
                 Some(z) => {
-                    match z {
-                        0.0 => (),
-                        _ => {
-                            id = id + 1;
-                            let indiv_marker = Marker {
-                                header: Header {
-                                    stamp: r2r::builtin_interfaces::msg::Time {
-                                        sec: 0,
-                                        nanosec: 0,
-                                    },
-                                    frame_id: frame.1.child_frame_id.to_string(),
-                                },
-                                ns: "".to_string(),
-                                id,
-                                type_: 3,
-                                action: 0,
-                                pose: Pose {
-                                    position: Point {
-                                        x: 0.0,
-                                        y: 0.0,
-                                        z: 0.0,
-                                    },
-                                    orientation: Quaternion {
-                                        x: 0.0,
-                                        y: 0.0,
-                                        z: 0.0,
-                                        w: 1.0,
-                                    },
-                                },
-                                lifetime: Duration { sec: 2, nanosec: 0 },
-                                scale: Vector3 {
-                                    x: z,
-                                    y: z,
-                                    z: 0.01,
-                                },
-                                color: ColorRGBA {
-                                    r: 0.0,
-                                    g: 255.0,
-                                    b: 0.0,
-                                    a: 0.3,
-                                },
-                                ..Marker::default()
-                            };
-                            markers.push(indiv_marker)
-                        }
-                    }
-                }
+                    id = id + 1;
+                    let indiv_marker = Marker {
+                        header: Header {
+                            stamp: r2r::builtin_interfaces::msg::Time { sec: 0, nanosec: 0 },
+                            frame_id: frame.1.child_frame_id.to_string(),
+                        },
+                        ns: "".to_string(),
+                        id,
+                        type_: 3,
+                        action: 0,
+                        pose: Pose {
+                            position: Point {
+                                x: 0.0,
+                                y: 0.0,
+                                z: 0.0,
+                            },
+                            orientation: Quaternion {
+                                x: 0.0,
+                                y: 0.0,
+                                z: 0.0,
+                                w: 1.0,
+                            },
+                        },
+                        lifetime: Duration { sec: 2, nanosec: 0 },
+                        scale: Vector3 {
+                            x: z,
+                            y: z,
+                            z: 0.01,
+                        },
+                        color: ColorRGBA {
+                            r: 0.0,
+                            g: 255.0,
+                            b: 0.0,
+                            a: 0.3,
+                        },
+                        ..Marker::default()
+                    };
+                    zone_markers.push(indiv_marker)
+                },
                 None => (),
             }
             match frame.1.next {
                 Some(n) => {
                     for enabled in n {
-                        match lookup_transform(&frame.1.child_frame_id, &enabled, &buffered_frames).await {
+                        match lookup_transform(&frame.1.child_frame_id, &enabled, &buffered_frames)
+                            .await
+                        {
                             Some(end_in_world) => {
                                 id = id + 1;
                                 let indiv_marker = Marker {
@@ -1505,27 +1547,24 @@ async fn zone_marker_publisher_callback(
                                             sec: 0,
                                             nanosec: 0,
                                         },
-                                        frame_id: frame
-                                            .1
-                                            .child_frame_id
-                                            .to_string(),
+                                        frame_id: frame.1.child_frame_id.to_string(),
                                     },
                                     ns: "".to_string(),
                                     id,
                                     type_: 0,
                                     action: 0,
-                                    points: vec!(
+                                    points: vec![
                                         Point {
-                                            x: 0.0, 
-                                            y: 0.0, 
-                                            z: 0.0 
+                                            x: 0.0,
+                                            y: 0.0,
+                                            z: 0.0,
                                         },
                                         Point {
                                             x: end_in_world.translation.x,
                                             y: end_in_world.translation.y,
                                             z: end_in_world.translation.z,
                                         },
-                                    ),
+                                    ],
                                     lifetime: Duration { sec: 2, nanosec: 0 },
                                     scale: Vector3 {
                                         x: 0.1,
@@ -1540,7 +1579,7 @@ async fn zone_marker_publisher_callback(
                                     },
                                     ..Marker::default()
                                 };
-                                markers.push(indiv_marker)
+                                path_markers.push(indiv_marker)
                             }
                             None => (),
                         }
@@ -1550,18 +1589,35 @@ async fn zone_marker_publisher_callback(
             }
         }
 
-        let array_msg = MarkerArray { markers };
+        let zone_array_msg = MarkerArray {
+            markers: zone_markers,
+        };
+        let path_array_msg = MarkerArray {
+            markers: path_markers,
+        };
 
-        match publisher.publish(&array_msg) {
+        match zone_publisher.publish(&zone_array_msg) {
             Ok(()) => (),
             Err(e) => {
                 r2r::log_error!(
                     NODE_ID,
-                    "Publisher failed to send marker message with: {}",
+                    "Publisher failed to send zone marker message with: {}",
                     e
                 );
             }
         };
+
+        match path_publisher.publish(&path_array_msg) {
+            Ok(()) => (),
+            Err(e) => {
+                r2r::log_error!(
+                    NODE_ID,
+                    "Publisher failed to send path marker message with: {}",
+                    e
+                );
+            }
+        };
+
         timer.tick().await?;
     }
 }
