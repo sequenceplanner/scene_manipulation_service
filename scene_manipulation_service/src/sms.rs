@@ -679,6 +679,9 @@ fn add_with_lookup_tf(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     transform: Transform,
+    time_stamp: Option<Time>,
+    zone: Option<f64>,
+    next: Option<Vec<String>>,
 ) -> ManipulateScene::Response {
     let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
     // let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
@@ -691,9 +694,9 @@ fn add_with_lookup_tf(
             child_frame_id: message.child_frame_id.clone(),
             transform,
             active: true,
-            time_stamp: None, // added just before broadcasting
-            zone: None,
-            next: None,
+            time_stamp,
+            zone,
+            next,
         },
     );
     *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
@@ -912,6 +915,7 @@ async fn teach_frame(
         broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
         buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     ) -> ManipulateScene::Response {
+        let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
         match lookup_transform(
             &message.parent_frame_id,
             "teaching_marker",
@@ -920,7 +924,26 @@ async fn teach_frame(
         .await
         {
             None => error_response("Failed to lookup transform."),
-            Some(transform) => add_with_lookup_tf(message, broadcasted_frames, transform),
+            Some(transform) => {
+                match local_broadcasted_frames.get(&message.child_frame_id.clone()) {
+                    Some(frame_data) => add_with_lookup_tf(
+                        message, 
+                        broadcasted_frames, 
+                        transform,
+                        frame_data.time_stamp.clone(),
+                        frame_data.zone,
+                        frame_data.next.clone()
+                    ),
+                    None => add_with_lookup_tf(
+                        message, 
+                        broadcasted_frames, 
+                        transform,
+                        None,
+                        None,
+                        None,
+                    )
+                }
+            },
         }
     }
 
@@ -959,6 +982,7 @@ async fn reparent_frame(
         buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     ) -> ManipulateScene::Response {
         let local_buffered_frames = buffered_frames.lock().unwrap().clone();
+        let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
         match check_would_produce_cycle(
             &make_broadcasted_frame_data(&ManipulateScene::Request {
                 command: "reparent".to_string(),
@@ -977,7 +1001,26 @@ async fn reparent_frame(
             .await
             {
                 None => error_response("Failed to lookup transform."),
-                Some(transform) => add_with_lookup_tf(message, broadcasted_frames, transform),
+                Some(transform) => {
+                    match local_broadcasted_frames.get(&message.child_frame_id.clone()) {
+                        Some(frame_data) => add_with_lookup_tf(
+                            message, 
+                            broadcasted_frames, 
+                            transform,
+                            frame_data.time_stamp.clone(),
+                            frame_data.zone,
+                            frame_data.next.clone()
+                        ),
+                        None => add_with_lookup_tf(
+                            message, 
+                            broadcasted_frames, 
+                            transform,
+                            None,
+                            None,
+                            None,
+                        )
+                    }
+                },
             },
             (true, cause) => error_response(&format!(
                 "Adding frame '{}' would produce a cycle. Not added, cause: '{}'",
@@ -1021,6 +1064,7 @@ async fn clone_frame(
         buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     ) -> ManipulateScene::Response {
         let local_buffered_frames = buffered_frames.lock().unwrap().clone();
+        let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
         let new_message = ManipulateScene::Request {
             command: "clone".to_string(),
             child_frame_id: message.new_frame_id.to_string(),
@@ -1040,7 +1084,26 @@ async fn clone_frame(
             .await
             {
                 None => error_response("Failed to lookup transform."),
-                Some(transform) => add_with_lookup_tf(&new_message, broadcasted_frames, transform),
+                Some(transform) => {
+                    match local_broadcasted_frames.get(&new_message.child_frame_id.clone()) {
+                        Some(frame_data) => add_with_lookup_tf(
+                            &new_message, 
+                            broadcasted_frames, 
+                            transform,
+                            frame_data.time_stamp.clone(),
+                            frame_data.zone,
+                            frame_data.next.clone()
+                        ),
+                        None => add_with_lookup_tf(
+                            &new_message, 
+                            broadcasted_frames, 
+                            transform,
+                            None,
+                            None,
+                            None,
+                        )
+                    }
+                },
             },
             (true, cause) => error_response(&format!(
                 "Adding frame '{}' would produce a cycle. Not added, cause: '{}'",
