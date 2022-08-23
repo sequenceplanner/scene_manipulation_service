@@ -1,3 +1,4 @@
+from ast import Call
 import sys
 from urllib import response
 import rclpy
@@ -26,7 +27,7 @@ class Callbacks:
     new_id = ""
     frames = []
     joints = JointState()
-    permanent = False
+    persist = False
     scenario_path = ""
     zone = "0.0"
     marker_size = "2.0"
@@ -53,8 +54,16 @@ class Ros2Node(Node, Callbacks):
         Callbacks.trigger_reparent_frame = self.trigger_reparent_frame
         Callbacks.trigger_teach_frame = self.trigger_teach_frame
         Callbacks.trigger_clone_frame = self.trigger_clone_frame
+
+        Callbacks.trigger_set_zone = self.trigger_set_zone
+        Callbacks.trigger_enable_path = self.trigger_enable_path
+        Callbacks.trigger_disable_path = self.trigger_disable_path
         Callbacks.trigger_reload_scenario = self.trigger_reload_scenario
         Callbacks.trigger_get_all = self.trigger_get_all
+
+        Callbacks.trigger_marker_resize = self.trigger_marker_resize
+        Callbacks.trigger_marker_move = self.trigger_marker_move
+        Callbacks.trigger_marker_reset = self.trigger_marker_reset
 
         self.tf_buffer = tf2_ros.Buffer()
         self.lf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
