@@ -38,23 +38,7 @@ class Callbacks:
     trigger_query = None
     trigger_get_all = None
     trigger_manipulate_scene = None
-    trigger_manipulate_extra_features = None
-
-    # trigger_remove_frame = None
-    # trigger_rename_frame = None
-    # trigger_reparent_frame = None
-    # trigger_teach_frame = None
-    # trigger_clone_frame = None
-
-    # trigger_reset_marker = None
-    # trigger_move_marker = None
-    # trigger_resize_marker = None
-    # trigger_enable_path = None
-    # trigger_disable_path = None
-    # trigger_reload_scenario = None
-    # trigger_set_zone = None
-
-    
+    trigger_manipulate_extra_features = None    
 
 class Ros2Node(Node, Callbacks):
     def __init__(self):
@@ -66,20 +50,6 @@ class Ros2Node(Node, Callbacks):
         Callbacks.trigger_get_all = self.trigger_get_all
         Callbacks.trigger_manipulate_scene = self.trigger_manipulate_scene
         Callbacks.trigger_manipulate_extra_features = self.trigger_manipulate_extra_features
-        
-        # Callbacks.trigger_remove_frame = self.trigger_remove_frame
-        # Callbacks.trigger_rename_frame = self.trigger_rename_frame
-        # Callbacks.trigger_reparent_frame = self.trigger_reparent_frame
-        # Callbacks.trigger_teach_frame = self.trigger_teach_frame
-        # Callbacks.trigger_clone_frame = self.trigger_clone_frame
-
-        # Callbacks.trigger_set_zone = self.trigger_set_zone
-        # Callbacks.trigger_enable_path = self.trigger_enable_path
-        # Callbacks.trigger_disable_path = self.trigger_disable_path
-        # Callbacks.trigger_reload_scenario = self.trigger_reload_scenario
-        # Callbacks.trigger_resize_marker = self.trigger_resize_marker
-        # Callbacks.trigger_move_marker = self.trigger_move_marker
-        # Callbacks.trigger_reset_marker = self.trigger_reset_marker
 
         self.tf_buffer = tf2_ros.Buffer(Duration(seconds=3, nanoseconds=0))
         self.lf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
@@ -262,7 +232,7 @@ class Ros2Node(Node, Callbacks):
             command,
             Callbacks.child,
             Callbacks.parent,
-            Callbacks.path,
+            Callbacks.scenario_path,
             float(size)
         )
         Callbacks.information = str(response.success) + ": " + response.info
