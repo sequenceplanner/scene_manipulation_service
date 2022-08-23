@@ -26,9 +26,8 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ManipulateScene.srv"
   "srv/LookupTransform.srv"
-  "srv/ReloadScenario.srv"
   "srv/GetAllTransforms.srv"
-  "srv/ResetMarker.srv"
+  "srv/ExtraFeatures.srv"
   DEPENDENCIES
     builtin_interfaces
     geometry_msgs

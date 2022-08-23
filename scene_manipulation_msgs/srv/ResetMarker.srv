@@ -1,9 +1,0 @@
-# Request
-string child_frame_id
-string parent_frame_id
-
----
-
-# Reply
-bool success
-string info

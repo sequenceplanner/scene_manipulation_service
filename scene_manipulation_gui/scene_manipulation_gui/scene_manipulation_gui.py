@@ -1,11 +1,12 @@
 from ast import Call
+from gc import callbacks
 import sys
 from urllib import response
 import rclpy
 import tf2_ros
 from rclpy.node import Node
 from geometry_msgs.msg import TransformStamped
-from scene_manipulation_msgs.srv import LookupTransform, ManipulateScene, ReloadScenario, GetAllTransforms
+from scene_manipulation_msgs.srv import LookupTransform, ManipulateScene, ExtraFeatures, GetAllTransforms
 from sensor_msgs.msg import JointState
 
 import threading
@@ -34,36 +35,52 @@ class Callbacks:
 
     trigger_refresh = None
     trigger_query = None
-    trigger_remove_frame = None
-    trigger_rename_frame = None
-    trigger_reparent_frame = None
-    trigger_teach_frame = None
-    trigger_clone_frame = None
-    trigger_reload_scenario = None
     trigger_get_all = None
+    trigger_manipulate_scene = None
+    trigger_manipulate_extra_features = None
+
+    # trigger_remove_frame = None
+    # trigger_rename_frame = None
+    # trigger_reparent_frame = None
+    # trigger_teach_frame = None
+    # trigger_clone_frame = None
+
+    # trigger_reset_marker = None
+    # trigger_move_marker = None
+    # trigger_resize_marker = None
+    # trigger_enable_path = None
+    # trigger_disable_path = None
+    # trigger_reload_scenario = None
+    # trigger_set_zone = None
+
+    
 
 class Ros2Node(Node, Callbacks):
     def __init__(self):
         Node.__init__(self, "scene_manipulation_gui")
         Callbacks.__init__(self)
 
-        Callbacks.trigger_query = self.trigger_query
         Callbacks.trigger_refresh = self.trigger_refresh
-        Callbacks.trigger_remove_frame = self.trigger_remove_frame
-        Callbacks.trigger_rename_frame = self.trigger_rename_frame
-        Callbacks.trigger_reparent_frame = self.trigger_reparent_frame
-        Callbacks.trigger_teach_frame = self.trigger_teach_frame
-        Callbacks.trigger_clone_frame = self.trigger_clone_frame
-
-        Callbacks.trigger_set_zone = self.trigger_set_zone
-        Callbacks.trigger_enable_path = self.trigger_enable_path
-        Callbacks.trigger_disable_path = self.trigger_disable_path
-        Callbacks.trigger_reload_scenario = self.trigger_reload_scenario
+        Callbacks.trigger_query = self.trigger_query
         Callbacks.trigger_get_all = self.trigger_get_all
+        Callbacks.trigger_manipulate_scene = self.trigger_manipulate_scene
+        Callbacks.trigger_manipulate_extra_features = self.trigger_manipulate_extra_features
+        
+        # Callbacks.trigger_remove_frame = self.trigger_remove_frame
+        # Callbacks.trigger_rename_frame = self.trigger_rename_frame
+        # Callbacks.trigger_reparent_frame = self.trigger_reparent_frame
+        # Callbacks.trigger_teach_frame = self.trigger_teach_frame
+        # Callbacks.trigger_clone_frame = self.trigger_clone_frame
 
-        Callbacks.trigger_marker_resize = self.trigger_marker_resize
-        Callbacks.trigger_marker_move = self.trigger_marker_move
-        Callbacks.trigger_marker_reset = self.trigger_marker_reset
+        # Callbacks.trigger_set_zone = self.trigger_set_zone
+        # Callbacks.trigger_enable_path = self.trigger_enable_path
+        # Callbacks.trigger_disable_path = self.trigger_disable_path
+        # Callbacks.trigger_reload_scenario = self.trigger_reload_scenario
+        # Callbacks.trigger_resize_marker = self.trigger_resize_marker
+        # Callbacks.trigger_move_marker = self.trigger_move_marker
+        # Callbacks.trigger_reset_marker = self.trigger_reset_marker
+
+        
 
         self.tf_buffer = tf2_ros.Buffer()
         self.lf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
@@ -91,13 +108,13 @@ class Ros2Node(Node, Callbacks):
                 "Manipulate Scene Service not available, waiting again..."
             )
 
-        self.reload_client = self.create_client(ReloadScenario, "reload_scenario")
-        self.reload_request = ReloadScenario.Request()
-        self.reload_response = ReloadScenario.Response()
+        self.extra_features_client = self.create_client(ExtraFeatures, "extra_features")
+        self.extra_features_request = ExtraFeatures.Request()
+        self.extra_features_response = ExtraFeatures.Response()
 
-        while not self.reload_client.wait_for_service(timeout_sec=1.0):
+        while not self.extra_features_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn(
-                "Reload Scenario Service not available, waiting again..."
+                "Extra Features Service not available, waiting again..."
             )
 
         self.get_all_client = self.create_client(GetAllTransforms, "get_all_transforms")
@@ -166,13 +183,12 @@ class Ros2Node(Node, Callbacks):
         else:
             Callbacks.information = str(response.success) + ": " + response.info
 
-    def manipulate_scene(self, command, child, parent, new_id, transform, zone):
+    def manipulate_scene(self, command, child, parent, new_id, transform):
         self.sms_request.command = command
         self.sms_request.child_frame_id = child
         self.sms_request.parent_frame_id = parent
         self.sms_request.new_frame_id = new_id
         self.sms_request.transform = transform
-        self.sms_request.zone = zone
         self.sms_future = self.sms_client.call_async(self.sms_request)
         while True:
             if self.sms_future.done():
@@ -184,17 +200,21 @@ class Ros2Node(Node, Callbacks):
                     self.get_logger().info("SMS succeded %r" % (response.success))
                 return response
 
-    def reload_scenario(self, path):
-        self.reload_request.scenario_path = path
-        future = self.reload_client.call_async(self.reload_request)
+    def manipulate_extra_features(self, command, child, parent, path, size):
+        self.extra_features_request.command = command
+        self.extra_features_request.child_frame_id = child
+        self.extra_features_request.parent_frame_id = parent
+        self.extra_features_request.scenario_path = path
+        self.extra_features_request.size = size
+        future = self.extra_features_client.call_async(self.extra_features_request)
         while True:
             if future.done():
                 try:
                     response = future.result()
                 except Exception as e:
-                    self.get_logger().info("Reload service call failed %r" % (e,))
+                    self.get_logger().info("Extra features service call failed %r" % (e,))
                 else:
-                    self.get_logger().info("Reload succeded %r" % (response.success))
+                    self.get_logger().info("Extra features succeded %r" % (response.success))
                 return response
 
     def get_all(self):
@@ -208,69 +228,6 @@ class Ros2Node(Node, Callbacks):
                 else:
                     self.get_logger().info("Get all succeded %r" % (response.success))
                 return response
-
-    def trigger_reload_scenario(self):
-        response = self.reload_scenario(Callbacks.scenario_path)
-        Callbacks.information = str(response.success) + ": " + response.info
-
-    def trigger_get_all(self):
-        response = self.get_all()
-        Callbacks.information = str(response)
-
-    def trigger_remove_frame(self):
-        response = self.manipulate_scene(
-            "remove",
-            Callbacks.child,
-            Callbacks.parent,
-            Callbacks.new_id,
-            Callbacks.transform.transform,
-            float(Callbacks.zone)
-        )
-        Callbacks.information = str(response.success) + ": " + response.info
-
-    def trigger_rename_frame(self):
-        response = self.manipulate_scene(
-            "rename",
-            Callbacks.child,
-            Callbacks.parent,
-            Callbacks.new_id,
-            Callbacks.transform.transform,
-            float(Callbacks.zone)
-        )
-        Callbacks.information = str(response.success) + ": " + response.info
-
-    def trigger_reparent_frame(self):
-        response = self.manipulate_scene(
-            "reparent",
-            Callbacks.child,
-            Callbacks.parent,
-            Callbacks.new_id,
-            Callbacks.transform.transform,
-            float(Callbacks.zone)
-        )
-        Callbacks.information = str(response.success) + ": " + response.info
-    
-    def trigger_teach_frame(self):
-        response = self.manipulate_scene(
-            "teach",
-            Callbacks.child,
-            Callbacks.parent,
-            Callbacks.new_id,
-            Callbacks.transform.transform,
-            float(Callbacks.zone)
-        )
-        Callbacks.information = str(response.success) + ": " + response.info
-
-    def trigger_clone_frame(self):
-        response = self.manipulate_scene(
-            "clone",
-            Callbacks.child,
-            Callbacks.parent,
-            Callbacks.new_id,
-            Callbacks.transform.transform,
-            float(Callbacks.zone)
-        )
-        Callbacks.information = str(response.success) + ": " + response.info
 
     def tf_lookup(self, parent, child):
         self.tf_lookup_request.parent_frame_id = parent
@@ -291,6 +248,29 @@ class Ros2Node(Node, Callbacks):
                     response = future.result()
                     return response
 
+    def trigger_manipulate_scene(self, command):
+        response = self.manipulate_scene(
+            command,
+            Callbacks.child,
+            Callbacks.parent,
+            Callbacks.new_id,
+            Callbacks.transform.transform
+        )
+        Callbacks.information = str(response.success) + ": " + response.info
+
+    def trigger_manipulate_extra_features(self, command, size):
+        response = self.manipulate_extra_features(
+            command,
+            Callbacks.child,
+            Callbacks.parent,
+            Callbacks.path,
+            float(size)
+        )
+        Callbacks.information = str(response.success) + ": " + response.info
+
+    def trigger_get_all(self):
+        response = self.get_all()
+        Callbacks.information = str(response)
 
 class Window(QWidget, Callbacks):
     def __init__(self):
@@ -309,8 +289,6 @@ class Window(QWidget, Callbacks):
 
     def make_select_box(self):
         combo_box = QGroupBox("select")
-        # combo_box.setMinimumWidth(300)
-        # combo_box.setMaximumHeight(200)
 
         combo_box_layout = QGridLayout()
         combo_1_box_label = QLabel("frame")
@@ -328,7 +306,6 @@ class Window(QWidget, Callbacks):
 
         self.refresh_button = QPushButton("refresh")
         self.refresh_button.setToolTip("""Refresh the lists to get all the latest frames in the scene.""")
-        # self.refresh_button.setMaximumWidth(280)
 
         self.persist = QCheckBox("persist")
         self.persist.setChecked(False)
@@ -343,8 +320,6 @@ If "persist" is not checked, the changes will only affect the current session.""
         info_pixmap = info_icon.pixmap(QSize(24, 24))
         info.setPixmap(info_pixmap)
         info.setToolTip("""Hover over objects to reveal information.""")
-#         info.setToolTip("""Select a frame to manipulate or use it to change the scene.
-# If persist is not checked, the changes will only affect the current session.""")
 
         combo_box_layout.addWidget(combo_1_box_label, 0, 0)
         combo_box_layout.addWidget(self.child_select_combo, 0, 1)
@@ -374,9 +349,6 @@ If "persist" is not checked, the changes will only affect the current session.""
 
     def make_actions_box(self):
         combo_box = QGroupBox("actions")
-        # combo_box.setMinimumWidth(300)
-        # combo_box.setMaximumHeight(200)
-
         combo_box_layout = QGridLayout()
 
         query_button = QPushButton("query")
@@ -396,17 +368,14 @@ The clone will spawn at the position where its original is, parented in the pare
 frame that is currently selected. Note the "persist" checkbox.""")
         new_id_line_edit = QLineEdit("")
         new_id_line_edit.setToolTip("""Put a new frame id here, or the name for the clone to be spawned.""")
-        # combo_1_box_button.setMaximumWidth(80)
 
         combo_box_layout.addWidget(query_button, 0, 0)
         combo_box_layout.addWidget(remove_button, 0, 1)
         combo_box_layout.addWidget(reparent_button, 0, 2)
         combo_box_layout.addWidget(teach_button, 0, 3)
-        # combo_box_layout.addWidget(new_id_line_edit_label, 1, 0)
         combo_box_layout.addWidget(new_id_line_edit, 1, 0, 1, 2)
         combo_box_layout.addWidget(rename_button, 1, 2)
         combo_box_layout.addWidget(clone_button, 1, 3)
-        # combo_box_layout.addWidget(info, 1, 4)
         combo_box.setLayout(combo_box_layout)
 
         def query_button_clicked():
@@ -460,9 +429,6 @@ frame that is currently selected. Note the "persist" checkbox.""")
 
     def make_extras_box(self):
         combo_box = QGroupBox("extras")
-        # combo_box.setMinimumWidth(300)
-        # combo_box.setMaximumHeight(100)
-
         combo_box_layout = QGridLayout()
 
         enable_path_button = QPushButton("enable path")
@@ -472,35 +438,24 @@ selected child frame. Note the "persist" checkbox.""")
         disable_path_button.setToolTip("""Disable the path from the selected parent to the 
 selected child frame. Note the "persist" checkbox.""")
 
-        # combo_1_box_label = QLabel("zone")
-        # combo_2_box_label = QLabel("path")
-
         set_zone_button = QPushButton("set zone")
         set_zone_button.setToolTip("""Set the "zone" of the selected frame using the line edit
 on the left. Note the "persist" checkbox.""")
-        # combo_1_box_button.setMaximumWidth(280)
         
         reload_button = QPushButton("reload")
         reload_button.setToolTip("""Reload the scene from the scenario folder specified with its path in the line edit.""")
-        # combo_2_box_button.setMaximumWidth(280)
         zone_line_edit = QLineEdit(Callbacks.zone)
         zone_line_edit.setMaximumWidth(90)
         zone_line_edit.setToolTip("""Put a frame "zone" size here in meters.""")
         scenario_path_line_edit = QLineEdit(Callbacks.scenario_path)
         scenario_path_line_edit.setToolTip("""Specify the path of the scenario here.""")
-        # line_edit_2.setMaximumWidth(313)
         get_all_button = QPushButton("get all")
         get_all_button.setToolTip("""List all the frames that are currently in the scene.""")
-        # combo_3_box_button.setMaximumWidth(80)
 
         combo_box_layout.addWidget(zone_line_edit, 0, 0, 1, 1)
-        # combo_box_layout.addWidget(combo_1_box_label, 0, 0)
-        
         combo_box_layout.addWidget(set_zone_button, 0, 1, 1, 1)
         combo_box_layout.addWidget(enable_path_button, 0, 2, 1, 2)
         combo_box_layout.addWidget(disable_path_button, 0, 4, 1, 2)
-        
-        # combo_box_layout.addWidget(combo_2_box_label, 1, 0)
         combo_box_layout.addWidget(scenario_path_line_edit, 1, 0, 1, 4)
         combo_box_layout.addWidget(reload_button, 1, 4, 1, 1)
         combo_box_layout.addWidget(get_all_button, 1, 5, 1, 1)
@@ -531,9 +486,6 @@ on the left. Note the "persist" checkbox.""")
 
     def make_teaching_marker_box(self):
         combo_box = QGroupBox("marker")
-        # combo_box.setMinimumWidth(300)
-        # combo_box.setMaximumHeight(100)
-
         combo_box_layout = QGridLayout()
 
         marker_size_edit = QLineEdit(Callbacks.marker_size)

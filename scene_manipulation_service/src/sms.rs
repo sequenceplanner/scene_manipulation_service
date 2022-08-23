@@ -3,7 +3,7 @@ use glam::{DAffine3, DQuat, DVec3};
 use r2r::builtin_interfaces::msg::{Duration, Time};
 use r2r::geometry_msgs::msg::{Point, Pose, Quaternion, Transform, TransformStamped, Vector3};
 use r2r::scene_manipulation_msgs::srv::{
-    GetAllTransforms, LookupTransform, ManipulateScene, ReloadScenario,
+    GetAllTransforms, LookupTransform, ManipulateScene, ExtraFeatures,
 };
 use r2r::std_msgs::msg::{ColorRGBA, Header};
 use r2r::tf2_msgs::msg::TFMessage;
@@ -153,9 +153,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let transform_lookup_service =
         node.create_service::<LookupTransform::Service>("lookup_transform")?;
 
-    // offer the scenario loading/reloading service
-    let load_scenario_service =
-        node.create_service::<ReloadScenario::Service>("reload_scenario")?;
+    // offer a service for extra features
+    let extra_features_service =
+        node.create_service::<ExtraFeatures::Service>("extra_features")?;
 
     // offer a service to get all frames from tf (local buffer)
     let get_all_transforms_service =
@@ -262,7 +262,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // offer a service for clients that want to load/reload the scenario
     let broadcasted_frames_clone_5 = broadcasted_frames.clone();
     tokio::task::spawn(async move {
-        let result = load_scenario_server(load_scenario_service, &broadcasted_frames_clone_5).await;
+        let result = extra_features_server(extra_features_service, &broadcasted_frames_clone_5).await;
         match result {
             Ok(()) => r2r::log_info!(NODE_ID, "Load Scenario Service call succeeded."),
             Err(e) => r2r::log_error!(NODE_ID, "Load Scenario Service call failed with: {}.", e),
@@ -404,51 +404,51 @@ async fn load_scenario(scenario: &Vec<String>) -> HashMap<String, FrameData> {
 // a service that enables you to reload the scenario while it is running
 // this is convenient when working on the .json frame files manually
 // TODO: add a loop check before adding frames
-async fn load_scenario_server(
-    mut service: impl Stream<Item = ServiceRequest<ReloadScenario::Service>> + Unpin,
+async fn extra_features_server(
+    mut service: impl Stream<Item = ServiceRequest<ExtraFeatures::Service>> + Unpin,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         match service.next().await {
             Some(request) => {
-                let scenario_res = list_frames_in_dir(&request.message.scenario_path, true).await;
-                match scenario_res {
-                    Ok(scenario) => {
-                        let loaded = load_scenario(&scenario).await;
-                        r2r::log_info!(
-                            NODE_ID,
-                            "(Re)loaded frames in the scene: '{:?}'.",
-                            loaded.keys()
-                        );
-                        let mut local_broadcasted_frames =
-                            broadcasted_frames.lock().unwrap().clone();
-                        for x in &loaded {
-                            local_broadcasted_frames.insert(x.0.clone(), x.1.clone());
-                        }
-                        *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
-                        request
-                            .respond(ReloadScenario::Response {
-                                success: true,
-                                info: format!(
-                                    "(Re)loaded frames in the scene: '{:?}'.",
-                                    loaded.keys()
-                                )
-                                .to_string(),
-                            })
-                            .expect("Could not send service response.");
-                        continue;
-                    }
-                    Err(e) => {
-                        request
-                            .respond(ReloadScenario::Response {
-                                success: false,
-                                info: format!("(Re)loading the scenario failed with: '{:?}'.", e)
-                                    .to_string(),
-                            })
-                            .expect("Could not send service response.");
-                        continue;
-                    }
-                }
+            //     let scenario_res = list_frames_in_dir(&request.message.scenario_path, true).await;
+            //     match scenario_res {
+            //         Ok(scenario) => {
+            //             let loaded = load_scenario(&scenario).await;
+            //             r2r::log_info!(
+            //                 NODE_ID,
+            //                 "(Re)loaded frames in the scene: '{:?}'.",
+            //                 loaded.keys()
+            //             );
+            //             let mut local_broadcasted_frames =
+            //                 broadcasted_frames.lock().unwrap().clone();
+            //             for x in &loaded {
+            //                 local_broadcasted_frames.insert(x.0.clone(), x.1.clone());
+            //             }
+            //             *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
+            //             request
+            //                 .respond(ReloadScenario::Response {
+            //                     success: true,
+            //                     info: format!(
+            //                         "(Re)loaded frames in the scene: '{:?}'.",
+            //                         loaded.keys()
+            //                     )
+            //                     .to_string(),
+            //                 })
+            //                 .expect("Could not send service response.");
+            //             continue;
+            //         }
+            //         Err(e) => {
+            //             request
+            //                 .respond(ReloadScenario::Response {
+            //                     success: false,
+            //                     info: format!("(Re)loading the scenario failed with: '{:?}'.", e)
+            //                         .to_string(),
+            //                 })
+            //                 .expect("Could not send service response.");
+            //             continue;
+            //         }
+            //     }
             }
             None => (),
         }
@@ -664,8 +664,8 @@ fn make_broadcasted_frame_data(
         transform: message.transform.clone(),
         active: true,
         time_stamp: None, // added just before broadcasting
-        zone: Some(message.zone.clone()),
-        next: Some(message.next.clone()),
+        zone: None,
+        next: None,
     }
 }
 
@@ -702,8 +702,8 @@ fn add_with_lookup_tf(
             transform,
             active: true,
             time_stamp: None, // added just before broadcasting
-            zone: Some(message.zone.clone()),
-            next: Some(message.next.clone()),
+            zone: None,
+            next: None,
         },
     );
     *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
@@ -822,8 +822,6 @@ async fn rename_frame(
             parent_frame_id: message.parent_frame_id.to_string(),
             new_frame_id: message.new_frame_id.to_string(),
             transform: message.transform.clone(),
-            zone: message.zone.clone(),
-            next: message.next.clone(),
         },
         &broadcasted_frames,
         &buffered_frames,
@@ -844,8 +842,6 @@ async fn rename_frame(
                         parent_frame_id: frame.parent_frame_id.to_string(),
                         new_frame_id: message.new_frame_id.to_string(),
                         transform: message.transform.clone(),
-                        zone: message.zone.clone(),
-                        next: message.next.clone(),
                     },
                     &broadcasted_frames,
                     &buffered_frames,
@@ -915,8 +911,6 @@ async fn reparent_frame(
                 parent_frame_id: message.parent_frame_id.to_string(),
                 new_frame_id: message.new_frame_id.to_string(),
                 transform: message.transform.clone(),
-                zone: message.zone.clone(),
-                next: message.next.clone(),
             }),
             &local_buffered_frames,
         ) {
@@ -978,8 +972,6 @@ async fn clone_frame(
             parent_frame_id: message.parent_frame_id.to_string(),
             new_frame_id: message.new_frame_id.to_string(),
             transform: message.transform.clone(),
-            zone: message.zone.clone(),
-            next: message.next.clone(),
         };
         match check_would_produce_cycle(
             &make_broadcasted_frame_data(&new_message),

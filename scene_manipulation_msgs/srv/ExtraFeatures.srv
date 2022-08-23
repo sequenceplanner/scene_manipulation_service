@@ -1,0 +1,24 @@
+# Request
+
+# What can be done (possible commands): 
+# reset_marker: reset the teaching marker to its original pose
+# resize_marker: resize the teaching marker using the 'size' field 
+# move_marker: move the teaching marker to the position of the child_frame_id
+# reload_scenario: reload the running scene using the 'scenario_path' field
+# set_zone: set the threshold zone for the child_frame_id using the 'size' field
+#       could be used for example to indicate that the robot is at (near) the frame
+# enable_path: put the 'child_frame_id' into the 'next' list of the 'parent_frame_id'
+#       this could then be used to store info about where the robot can move
+# disable_path: remove the 'child_frame_id' from the 'next' list of the 'parent_frame_id'
+
+string command 
+string child_frame_id
+string parent_frame_id
+string scenario_path
+float32 size
+
+---
+
+# Reply
+bool success
+string info

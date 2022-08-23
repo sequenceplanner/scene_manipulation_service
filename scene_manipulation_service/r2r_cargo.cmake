@@ -1,3 +1,11 @@
+#
+# For r2r 0.6.3.
+#
+# cmake code for simple colcon integration.
+# See https://github.com/m-dahl/r2r_minimal_node/
+# for an example of how to use it to build with colcon.
+#
+
 # the "recursive" dependencies already defined don't seem to include all
 # packages. sigh. so here we traverse the dependencies manually
 # instead. we also keep track of which packages that contain idl files.
