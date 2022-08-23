@@ -495,6 +495,18 @@ async fn extra_features_server(
                         .expect("Could not send service response.");
                     continue;
                 }
+                "set_zone" => {
+                    r2r::log_info!(
+                        NODE_ID,
+                        "Got 'set_zone' request: {:?}.",
+                        request.message
+                    );
+                    let response = set_zone(&request.message, &broadcasted_frames).await;
+                    request
+                        .respond(response)
+                        .expect("Could not send service response.");
+                    continue;
+                }
                 _ => {
                     r2r::log_error!(NODE_ID, "No such command.");
                     continue;
@@ -528,52 +540,35 @@ async fn reload_scenario(
     }
 }
 
-// loop {
-//     match service.next().await {
-//         Some(request) => {
-//     let scenario_res = list_frames_in_dir(&request.message.scenario_path, true).await;
-//     match scenario_res {
-//         Ok(scenario) => {
-//             let loaded = load_scenario(&scenario).await;
-//             r2r::log_info!(
-//                 NODE_ID,
-//                 "(Re)loaded frames in the scene: '{:?}'.",
-//                 loaded.keys()
-//             );
-//             let mut local_broadcasted_frames =
-//                 broadcasted_frames.lock().unwrap().clone();
-//             for x in &loaded {
-//                 local_broadcasted_frames.insert(x.0.clone(), x.1.clone());
-//             }
-//             *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
-//             request
-//                 .respond(ReloadScenario::Response {
-//                     success: true,
-//                     info: format!(
-//                         "(Re)loaded frames in the scene: '{:?}'.",
-//                         loaded.keys()
-//                     )
-//                     .to_string(),
-//                 })
-//                 .expect("Could not send service response.");
-//             continue;
-//         }
-//         Err(e) => {
-//             request
-//                 .respond(ReloadScenario::Response {
-//                     success: false,
-//                     info: format!("(Re)loading the scenario failed with: '{:?}'.", e)
-//                         .to_string(),
-//                 })
-//                 .expect("Could not send service response.");
-//             continue;
-//         }
-//     }
-//             }
-//             None => (),
-//         }
-//     }
-// }
+async fn set_zone(
+    message: &r2r::scene_manipulation_msgs::srv::ExtraFeatures::Request,
+    broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+) -> ExtraFeatures::Response {
+    let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
+    let mut local_broadcasted_frames_clone = local_broadcasted_frames.clone();
+    match local_broadcasted_frames.get(&message.child_frame_id) {
+        Some(frame) => {
+            local_broadcasted_frames_clone.insert(
+                message.child_frame_id.clone(),
+                FrameData {
+                    parent_frame_id: frame.parent_frame_id.clone(),
+                    child_frame_id: frame.child_frame_id.clone(), 
+                    transform: frame.transform.clone(),
+                    active: frame.active,
+                    time_stamp: frame.time_stamp.clone(),
+                    zone: Some(message.size), 
+                    next: frame.next.clone()
+                }
+            );
+            *broadcasted_frames.lock().unwrap() = local_broadcasted_frames_clone;
+            extra_success_response(&format!(
+                "Zone for '{}' has been se to to '{}'.",
+                &frame.child_frame_id, &message.size
+            ))
+        }  
+        None => extra_error_response("Frame doesn't exist."),
+    }
+}
 
 async fn transform_lookup_server(
     mut service: impl Stream<Item = ServiceRequest<LookupTransform::Service>> + Unpin,

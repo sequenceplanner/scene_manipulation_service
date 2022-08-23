@@ -51,7 +51,8 @@ class Ros2Node(Node, Callbacks):
         Callbacks.trigger_manipulate_scene = self.trigger_manipulate_scene
         Callbacks.trigger_manipulate_extra_features = self.trigger_manipulate_extra_features
 
-        self.tf_buffer = tf2_ros.Buffer(Duration(seconds=3, nanoseconds=0))
+        # self.tf_buffer = tf2_ros.Buffer(Duration(seconds=3, nanoseconds=0))
+        self.tf_buffer = tf2_ros.Buffer()
         self.lf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
         self.scenario_path = self.declare_parameter("scenario_path", "default value")
@@ -227,13 +228,13 @@ class Ros2Node(Node, Callbacks):
         )
         Callbacks.information = str(response.success) + ": " + response.info
 
-    def trigger_manipulate_extra_features(self, command, size):
+    def trigger_manipulate_extra_features(self, command):
         response = self.manipulate_extra_features(
             command,
             Callbacks.child,
             Callbacks.parent,
             Callbacks.scenario_path,
-            float(size)
+            float(Callbacks.zone)
         )
         Callbacks.information = str(response.success) + ": " + response.info
 
@@ -433,31 +434,32 @@ on the left. Note the "persist" checkbox.""")
         combo_box.setLayout(combo_box_layout)
 
         def set_zone_button_clicked():
+            Callbacks.child = self.child_select_combo.currentText()
             Callbacks.zone = zone_line_edit.text()
-            Callbacks.trigger_manipulate_extra_features("set_zone", Callbacks.zone)
+            Callbacks.trigger_manipulate_extra_features("set_zone")
             self.output.append(Callbacks.information)
 
         set_zone_button.clicked.connect(set_zone_button_clicked)
 
         def enable_path_button_clicked():
-            Callbacks.child = self.child_select_combo.text()
-            Callbacks.parent = self.parent_select_combo.text()
-            Callbacks.trigger_manipulate_extra_features("enable_path", Callbacks.zone)
+            Callbacks.child = self.child_select_combo.currentText()
+            Callbacks.parent = self.parent_select_combo.currentText()
+            Callbacks.trigger_manipulate_extra_features("enable_path")
             self.output.append(Callbacks.information)
 
         enable_path_button.clicked.connect(enable_path_button_clicked)
 
         def disable_path_button_clicked():
-            Callbacks.child = self.child_select_combo.text()
-            Callbacks.parent = self.parent_select_combo.text()
-            Callbacks.trigger_manipulate_extra_features("disable_path", Callbacks.zone)
+            Callbacks.child = self.child_select_combo.currentText()
+            Callbacks.parent = self.parent_select_combo.currentText()
+            Callbacks.trigger_manipulate_extra_features("disable_path")
             self.output.append(Callbacks.information)
 
         disable_path_button.clicked.connect(disable_path_button_clicked)
 
         def reload_button_button_clicked():
             Callbacks.scenario_path = scenario_path_line_edit.text()
-            Callbacks.trigger_manipulate_extra_features("reload_scenario", Callbacks.zone)
+            Callbacks.trigger_manipulate_extra_features("reload_scenario")
             self.output.append(Callbacks.information)
 
         reload_button.clicked.connect(reload_button_button_clicked)
@@ -506,7 +508,7 @@ on the left. Note the "persist" checkbox.""")
         reset_button.clicked.connect(reset_marker_button_clicked)
 
         def move_marker_button_clicked():
-            Callbacks.child = self.child_select_combo.text()
+            Callbacks.child = self.child_select_combo.currentText()
             Callbacks.trigger_manipulate_extra_features("move_marker", Callbacks.marker_size)
             self.output.append(Callbacks.information)
 
