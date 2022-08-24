@@ -228,13 +228,13 @@ class Ros2Node(Node, Callbacks):
         )
         Callbacks.information = str(response.success) + ": " + response.info
 
-    def trigger_manipulate_extra_features(self, command):
+    def trigger_manipulate_extra_features(self, command, size):
         response = self.manipulate_extra_features(
             command,
             Callbacks.child,
             Callbacks.parent,
             Callbacks.scenario_path,
-            float(Callbacks.zone)
+            float(size)
         )
         Callbacks.information = str(response.success) + ": " + response.info
 
@@ -436,7 +436,7 @@ on the left. Note the "persist" checkbox.""")
         def set_zone_button_clicked():
             Callbacks.child = self.child_select_combo.currentText()
             Callbacks.zone = zone_line_edit.text()
-            Callbacks.trigger_manipulate_extra_features("set_zone")
+            Callbacks.trigger_manipulate_extra_features("set_zone", Callbacks.zone)
             self.output.append(Callbacks.information)
 
         set_zone_button.clicked.connect(set_zone_button_clicked)
@@ -444,7 +444,7 @@ on the left. Note the "persist" checkbox.""")
         def enable_path_button_clicked():
             Callbacks.child = self.child_select_combo.currentText()
             Callbacks.parent = self.parent_select_combo.currentText()
-            Callbacks.trigger_manipulate_extra_features("enable_path")
+            Callbacks.trigger_manipulate_extra_features("enable_path", Callbacks.zone)
             self.output.append(Callbacks.information)
 
         enable_path_button.clicked.connect(enable_path_button_clicked)
@@ -452,14 +452,14 @@ on the left. Note the "persist" checkbox.""")
         def disable_path_button_clicked():
             Callbacks.child = self.child_select_combo.currentText()
             Callbacks.parent = self.parent_select_combo.currentText()
-            Callbacks.trigger_manipulate_extra_features("disable_path")
+            Callbacks.trigger_manipulate_extra_features("disable_path", Callbacks.zone)
             self.output.append(Callbacks.information)
 
         disable_path_button.clicked.connect(disable_path_button_clicked)
 
         def reload_button_button_clicked():
             Callbacks.scenario_path = scenario_path_line_edit.text()
-            Callbacks.trigger_manipulate_extra_features("reload_scenario")
+            Callbacks.trigger_manipulate_extra_features("reload_scenario", Callbacks.zone)
             self.output.append(Callbacks.information)
 
         reload_button.clicked.connect(reload_button_button_clicked)

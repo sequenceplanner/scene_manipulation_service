@@ -10,7 +10,7 @@ use r2r::tf2_msgs::msg::TFMessage;
 use r2r::visualization_msgs::msg::{Marker, MarkerArray};
 use r2r::{ParameterValue, QosProfile, ServiceRequest};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs::{self, File};
 use std::io::BufReader;
@@ -32,7 +32,7 @@ pub struct FrameData {
     pub transform: Transform,
     pub active: bool,
     pub zone: Option<f64>,
-    pub next: Option<Vec<String>>,
+    pub next: Option<HashSet<String>>,
     pub time_stamp: Option<Time>,
 }
 
@@ -507,6 +507,30 @@ async fn extra_features_server(
                         .expect("Could not send service response.");
                     continue;
                 }
+                "enable_path" => {
+                    r2r::log_info!(
+                        NODE_ID,
+                        "Got 'enable_path' request: {:?}.",
+                        request.message
+                    );
+                    let response = enable_or_disable_path(&request.message, &broadcasted_frames, true).await;
+                    request
+                        .respond(response)
+                        .expect("Could not send service response.");
+                    continue;
+                }
+                "disable_path" => {
+                    r2r::log_info!(
+                        NODE_ID,
+                        "Got 'disable_path' request: {:?}.",
+                        request.message
+                    );
+                    let response = enable_or_disable_path(&request.message, &broadcasted_frames, false).await;
+                    request
+                        .respond(response)
+                        .expect("Could not send service response.");
+                    continue;
+                }
                 _ => {
                     r2r::log_error!(NODE_ID, "No such command.");
                     continue;
@@ -562,11 +586,70 @@ async fn set_zone(
             );
             *broadcasted_frames.lock().unwrap() = local_broadcasted_frames_clone;
             extra_success_response(&format!(
-                "Zone for '{}' has been se to to '{}'.",
+                "Zone for '{}' has been set to '{}'.",
                 &frame.child_frame_id, &message.size
             ))
         }  
         None => extra_error_response("Frame doesn't exist."),
+    }
+}
+
+async fn enable_or_disable_path(
+    message: &r2r::scene_manipulation_msgs::srv::ExtraFeatures::Request,
+    broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+    enable: bool
+) -> ExtraFeatures::Response {
+    let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
+    let mut local_broadcasted_frames_clone = local_broadcasted_frames.clone();
+    match local_broadcasted_frames.get(&message.parent_frame_id) {
+        Some(parent) => {
+            match local_broadcasted_frames.get(&message.child_frame_id) {
+                Some(child) => {
+                    let new_next = match parent.next.clone() {
+                        Some(mut n) => {
+                            match enable {
+                                true => n.insert(child.child_frame_id.clone()),
+                                false => n.remove(&child.child_frame_id),
+                            };
+                            n
+                        },
+                        None => {
+                            let mut n = HashSet::new();
+                            match enable {
+                                true => {
+                                    n.insert(child.child_frame_id.clone());
+                                },
+                                false => ()
+                            };
+                            n
+                        }
+                    };
+                    local_broadcasted_frames_clone.insert(
+                        parent.child_frame_id.clone(),
+                        FrameData {
+                            parent_frame_id: parent.parent_frame_id.clone(),
+                            child_frame_id: parent.child_frame_id.clone(), 
+                            transform: parent.transform.clone(),
+                            active: parent.active,
+                            time_stamp: parent.time_stamp.clone(),
+                            zone: parent.zone, 
+                            next: Some(new_next)
+                        }
+                    );
+                    *broadcasted_frames.lock().unwrap() = local_broadcasted_frames_clone;
+                    let reply_info = match enable {
+                        true => "enabled",
+                        false => "disabled"
+                    };
+                    extra_success_response(&format!(
+                        "Path between '{}' and '{}' has been {}.",
+                        &parent.child_frame_id, &child.child_frame_id, reply_info
+                    ))
+                }
+                None => extra_error_response("Child frame is not published by the local broadcaster. Paths can't be enabled between frames published elsewhere."),
+            }
+        }
+        None => extra_error_response("Parent frame is not published by the local broadcaster. Paths can't be enabled between frames published elsewhere."),
     }
 }
 
@@ -742,7 +825,7 @@ fn add_with_lookup_tf(
     transform: Transform,
     time_stamp: Option<Time>,
     zone: Option<f64>,
-    next: Option<Vec<String>>,
+    next: Option<HashSet<String>>,
 ) -> ManipulateScene::Response {
     let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
     // let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
