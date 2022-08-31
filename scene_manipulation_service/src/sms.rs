@@ -2,8 +2,9 @@ use futures::{stream::Stream, StreamExt};
 use glam::{DAffine3, DQuat, DVec3};
 use r2r::builtin_interfaces::msg::{Duration, Time};
 use r2r::geometry_msgs::msg::{Point, Pose, Quaternion, Transform, TransformStamped, Vector3};
+use r2r::scene_manipulation_msgs::msg::{TFExtra, TFExtraData};
 use r2r::scene_manipulation_msgs::srv::{
-    ExtraFeatures, GetAllTransforms, LookupTransform, ManipulateScene,
+    ExtraFeatures, GetAllTransforms, LookupTransform, ManipulateScene, GetAllExtra
 };
 use r2r::std_msgs::msg::{ColorRGBA, Header};
 use r2r::tf2_msgs::msg::TFMessage;
@@ -34,6 +35,8 @@ pub struct FrameData {
     pub zone: Option<f64>,
     pub next: Option<HashSet<String>>,
     pub time_stamp: Option<Time>,
+    pub frame_type: Option<String>,
+    // pub local: bool     // is it published by sms or elsewhere
 }
 
 // the testing module
@@ -117,7 +120,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // frames that are published by this broadcaster
     let broadcasted_frames = Arc::new(Mutex::new(init_loaded));
 
-    // frames that exist on the tf and tf_static topic, i.e. this is a local tf buffer
+    // frames that exist on the tf and tf_static topic, i.e. this is a tf buffer
     let buffered_frames = Arc::new(Mutex::new(HashMap::<String, FrameData>::new()));
 
     // listen to the active frames on the tf topic to see if a frame exists before broadcasting it
@@ -129,6 +132,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "tf_static",
         QosProfile::transient_local(QosProfile::default()),
     )?;
+
+    // listen to the frames on the tf extra topic. Some nodes need to publish some additional info
+    // about frames, so this is where we can pick that up and maintain it and publish it to tf
+    let extra_tf_listener =
+        node.subscribe::<TFExtra>("tf_extra", QosProfile::best_effort(QosProfile::default()))?;
 
     // publish the static frames to tf_static
     let static_pub_timer =
@@ -158,6 +166,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // offer a service to get all frames from tf (local buffer)
     let get_all_transforms_service =
         node.create_service::<GetAllTransforms::Service>("get_all_transforms")?;
+
+    // offer a service to get all extras from the broadcaster
+    let get_all_extras_service =
+        node.create_service::<GetAllExtra::Service>("get_all_extras")?;
 
     // publish the visualization markers for zone size for each frame
     let zone_marker_publisher = node
@@ -286,7 +298,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         };
     });
 
-    // frequency of how often to refresh (add or remove) frames to the local buffer
+    // let's see if this will work out...
+    let boadcasted_frames_clone_6 = broadcasted_frames.clone();
+    tokio::task::spawn(async move {
+        match extra_tf_listener_callback(extra_tf_listener, &boadcasted_frames_clone_6.clone())
+            .await
+        {
+            Ok(()) => (),
+            Err(e) => r2r::log_error!(NODE_ID, "Extra tf listener failed with: '{}'.", e),
+        };
+    });
+
+
+    // frequency of how often to refresh (add or remove) frames to the local tf buffer
     let buffer_maintain_timer =
         node.create_wall_timer(std::time::Duration::from_millis(BUFFER_MAINTAIN_RATE))?;
 
@@ -300,13 +324,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     });
 
     // offer a service for clients that want to get all transforms from the local buffer and their names
-    // let buffered_frames_clone_4 = buffered_frames.clone();
+    let buffered_frames_clone_31 = buffered_frames.clone();
     tokio::task::spawn(async move {
         let result =
-            get_all_transforms_server(get_all_transforms_service, &buffered_frames.clone()).await;
+            get_all_transforms_server(get_all_transforms_service, &buffered_frames_clone_31.clone()).await;
         match result {
             Ok(()) => r2r::log_info!(NODE_ID, "Get All Frames Service call succeeded."),
             Err(e) => r2r::log_error!(NODE_ID, "Get All Frames Service call failed with: {}.", e),
+        };
+    });
+
+    tokio::task::spawn(async move {
+        let result =
+            get_all_extras_server(get_all_extras_service, &broadcasted_frames.clone(), &buffered_frames.clone()).await;
+        match result {
+            Ok(()) => r2r::log_info!(NODE_ID, "Get All Extras Service call succeeded."),
+            Err(e) => r2r::log_error!(NODE_ID, "Get All Extras Service call failed with: {}.", e),
         };
     });
 
@@ -581,7 +614,9 @@ async fn set_zone(
                     active: frame.active,
                     time_stamp: frame.time_stamp.clone(),
                     zone: Some(message.size), 
-                    next: frame.next.clone()
+                    next: frame.next.clone(),
+                    frame_type: frame.frame_type.clone(),
+                    // local: frame.local
                 }
             );
             *broadcasted_frames.lock().unwrap() = local_broadcasted_frames_clone;
@@ -633,7 +668,9 @@ async fn enable_or_disable_path(
                             active: parent.active,
                             time_stamp: parent.time_stamp.clone(),
                             zone: parent.zone, 
-                            next: Some(new_next)
+                            next: Some(new_next),
+                            frame_type: parent.frame_type.clone(),
+                            // local: parent.local
                         }
                     );
                     *broadcasted_frames.lock().unwrap() = local_broadcasted_frames_clone;
@@ -750,6 +787,165 @@ async fn get_all_transforms_server(
     }
 }
 
+async fn get_all_extras_server(
+    mut service: impl Stream<Item = ServiceRequest<GetAllExtra::Service>> + Unpin,
+    broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+    buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    loop {
+        match service.next().await {
+            Some(request) => {
+                let frames_local = broadcasted_frames.lock().unwrap().clone();
+                let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
+                let now = clock.get_now().unwrap();
+                let time_stamp = r2r::Clock::to_builtin_time(&now);
+                let mut filtered_correct_type: Vec<FrameData>  = vec!();
+                let mut extras_list = vec!();
+
+                frames_local.iter().for_each(|frame| match &frame.1.frame_type {
+                    Some(has_type) => match request.message.frame_type.as_str() {
+                        "" => filtered_correct_type.push(frame.1.clone()),
+                        _ => match has_type == &request.message.frame_type {
+                            true => filtered_correct_type.push(frame.1.clone()),
+                            false => ()
+                        }
+                    }
+                    None => ()
+                });
+
+                for filtered in filtered_correct_type {
+                    match lookup_transform(
+                        &request.message.parent_frame_id,
+                        &filtered.child_frame_id,
+                        &buffered_frames,
+                    )
+                    .await {
+                        Some(found) => {
+                            extras_list.push(
+                                TFExtraData {
+                                    transform: TransformStamped {
+                                        header: Header {
+                                            stamp: time_stamp.clone(),
+                                            frame_id: request.message.parent_frame_id.clone()
+                                        },
+                                        child_frame_id: filtered.child_frame_id.clone(),
+                                        transform: found.clone()
+                                    },
+                                    frame_type: match filtered.frame_type {
+                                        Some(frame_type) => frame_type,
+                                        None => "".to_string()
+                                    },
+                                    next: match filtered.next {
+                                        Some(next) => next.into_iter().collect(),
+                                        None => vec!()
+                                    },
+                                    zone: match filtered.zone {
+                                        Some(zone) => zone,
+                                        None => 0.0
+                                    }
+                                }
+                            )
+                        },
+                        None =>()
+                    }
+                }
+
+                // frames_local.iter().for_each(|frame| match &frame.1.frame_type {
+                //     Some(has_type) => match request.message.frame_type.as_str() {
+                //         "" => filtered_correct_type.push(frame.1.clone()),
+                //         _ => match has_type == &request.message.frame_type {
+                //             true => match lookup_transform(
+                //                 &request.message.parent_frame_id,
+                //                 &frame.1.child_frame_id,
+                //                 &buffered_frames,
+                //             )
+                //             .await {
+                //                 Some(found) => {
+                //                     extras_list.push(
+                //                         TFExtraData {
+                //                             transform: TransformStamped {
+                //                                 header: Header {
+                //                                     stamp: time_stamp.clone(),
+                //                                     frame_id: request.message.parent_frame_id.clone()
+                //                                 },
+                //                                 child_frame_id: filtered.1.child_frame_id.clone(),
+                //                                 transform: found.clone()
+                //                             },
+                //                             frame_type: match filtered.1.frame_type {
+                //                                 Some(frame_type) => frame_type,
+                //                                 None => "".to_string()
+                //                             },
+                //                             next: match filtered.1.next {
+                //                                 Some(next) => next,
+                //                                 None => vec!()
+                //                             },
+                //                             zone: match filtered.1.zone {
+                //                                 Some(zone) => zone,
+                //                                 None => 0.0
+                //                             }
+                //                         }
+                //                     )
+                //                 },
+                //                 None =>()
+                //             },
+                //             false => ()
+                //         }
+                //     }
+                //     None => ()
+                // });
+
+                // frames_local.iter().filter(|frame| match frame.1.frame_type {
+                //     Some(f_type) => 
+                // } == request.message.frame_type).for_each(|filtered| {
+                //     match lookup_transform(
+                //         &request.message.parent_frame_id,
+                //         &filtered.1.child_frame_id,
+                //         &buffered_frames,
+                //     )
+                //     .await {
+                //         Some(found) => {
+                //             extras_list.push(
+                //                 TFExtraData {
+                //                     transform: TransformStamped {
+                //                         header: Header {
+                //                             stamp: time_stamp.clone(),
+                //                             frame_id: request.message.parent_frame_id.clone()
+                //                         },
+                //                         child_frame_id: filtered.1.child_frame_id.clone(),
+                //                         transform: found.clone()
+                //                     },
+                //                     frame_type: matchfiltered.1.frame_type,
+                //                     next: match filtered.1.next {
+                //                         Some(next) => next,
+                //                         None => vec!()
+                //                     },
+                //                     zone: match filtered.1.zone {
+                //                         Some(zone) => zone,
+                //                         None => 0.0
+                //                     }
+                //                 }
+                //             )
+                //         },
+                //         None =>()
+                //     }
+                // });
+                
+
+                let response = GetAllExtra::Response {
+                    success: true,
+                    info: "".to_string(),
+                    extras: TFExtra { data: extras_list } ,
+                };
+                request
+                    .respond(response)
+                    .expect("Could not send service response.");
+                continue;
+            }
+            None => {}
+        }
+    }
+}
+
 fn main_error_response(msg: &str) -> ManipulateScene::Response {
     let info = msg.to_string();
     // r2r::log_error!(NODE_ID, "{}", info);
@@ -800,6 +996,7 @@ fn make_broadcasted_frame_data(
         time_stamp: None, // added just before broadcasting
         zone: None,
         next: None,
+        frame_type: None
     }
 }
 
@@ -826,6 +1023,7 @@ fn add_with_lookup_tf(
     time_stamp: Option<Time>,
     zone: Option<f64>,
     next: Option<HashSet<String>>,
+    frame_type: Option<String>
 ) -> ManipulateScene::Response {
     let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
     // let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
@@ -841,6 +1039,7 @@ fn add_with_lookup_tf(
             time_stamp,
             zone,
             next,
+            frame_type
         },
     );
     *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
@@ -1077,9 +1276,10 @@ async fn teach_frame(
                         frame_data.time_stamp.clone(),
                         frame_data.zone,
                         frame_data.next.clone(),
+                        frame_data.frame_type.clone()
                     ),
                     None => {
-                        add_with_lookup_tf(message, broadcasted_frames, transform, None, None, None)
+                        add_with_lookup_tf(message, broadcasted_frames, transform, None, None, None, None)
                     }
                 }
             }
@@ -1149,6 +1349,7 @@ async fn reparent_frame(
                             frame_data.time_stamp.clone(),
                             frame_data.zone,
                             frame_data.next.clone(),
+                            frame_data.frame_type.clone()
                         ),
                         None => add_with_lookup_tf(
                             message,
@@ -1157,6 +1358,7 @@ async fn reparent_frame(
                             None,
                             None,
                             None,
+                            None
                         ),
                     }
                 }
@@ -1232,6 +1434,7 @@ async fn clone_frame(
                             frame_data.time_stamp.clone(),
                             frame_data.zone,
                             frame_data.next.clone(),
+                            frame_data.frame_type.clone()
                         ),
                         None => add_with_lookup_tf(
                             &new_message,
@@ -1240,6 +1443,7 @@ async fn clone_frame(
                             None,
                             None,
                             None,
+                            None
                         ),
                     }
                 }
@@ -1384,6 +1588,7 @@ async fn active_tf_listener_callback(
                             time_stamp: Some(t.header.stamp.clone()),
                             zone: None,
                             next: None,
+                            frame_type: None
                         },
                     );
                 });
@@ -1417,10 +1622,64 @@ async fn static_tf_listener_callback(
                             time_stamp: Some(t.header.stamp.clone()),
                             zone: None,
                             next: None,
+                            frame_type: None
                         },
                     );
                 });
                 *buffered_frames.lock().unwrap() = frames_local;
+            }
+            None => {
+                r2r::log_error!(NODE_ID, "Subscriber did not get the message?");
+            }
+        }
+    }
+}
+
+// updates the broadcaster buffer with frames from the tf extra topic
+async fn extra_tf_listener_callback(
+    mut subscriber: impl Stream<Item = TFExtra> + Unpin,
+    broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    loop {
+        match subscriber.next().await {
+            Some(message) => {
+                let mut frames_local = broadcasted_frames.lock().unwrap().clone();
+                message.data.iter().for_each(|t| {
+                    match frames_local.get(&t.transform.child_frame_id.clone()) {
+                        Some(exists) => {
+                            frames_local.insert(
+                                t.transform.child_frame_id.clone(),
+                                FrameData {
+                                    parent_frame_id: t.transform.header.frame_id.clone(),
+                                    child_frame_id: t.transform.child_frame_id.clone(),
+                                    transform: t.transform.transform.clone(),
+                                    active: true,
+                                    time_stamp: Some(t.transform.header.stamp.clone()),
+                                    zone: exists.zone.clone(),
+                                    next: exists.next.clone(),
+                                    frame_type: Some(t.frame_type.clone())
+                                },
+                            );
+                        }, 
+                        None => {
+                            frames_local.insert(
+                                t.transform.child_frame_id.clone(),
+                                FrameData {
+                                    parent_frame_id: t.transform.header.frame_id.clone(),
+                                    child_frame_id: t.transform.child_frame_id.clone(),
+                                    transform: t.transform.transform.clone(),
+                                    active: true,
+                                    time_stamp: Some(t.transform.header.stamp.clone()),
+                                    zone: None,
+                                    next: None,
+                                    frame_type: Some(t.frame_type.clone())
+                                },
+                            );
+                        }, 
+                    }
+                    
+                });
+                *broadcasted_frames.lock().unwrap() = frames_local;
             }
             None => {
                 r2r::log_error!(NODE_ID, "Subscriber did not get the message?");

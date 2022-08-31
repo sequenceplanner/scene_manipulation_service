@@ -19,6 +19,8 @@ class SceneManipulationMarker(Node):
             self, "scene_manipulation_marker_server"
         )
 
+        # self.marker_features = self.create_service(ExtraFeatures, 'marker_features', self.marker_features_callback)
+
         self.initial_marker_pose = TransformStamped()
         self.initial_marker_pose.child_frame_id = "teaching_marker"
         self.initial_marker_pose.header.frame_id = "world"
@@ -42,8 +44,6 @@ class SceneManipulationMarker(Node):
 
         timer_period = 0.05  # seconds
         self.timer = self.create_timer(timer_period, self.timer_callback)        
-
-        # need a service also in gui like: put marker to "child" in "parent" when reseting and loading the marker
 
         self.create_interactive_marker(False, InteractiveMarkerControl.NONE, self.initial_marker_pose, True)
         self.interactive_markers_server.applyChanges()

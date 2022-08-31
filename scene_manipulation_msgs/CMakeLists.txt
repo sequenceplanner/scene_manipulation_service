@@ -28,6 +28,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/LookupTransform.srv"
   "srv/GetAllTransforms.srv"
   "srv/ExtraFeatures.srv"
+  "srv/GetAllExtra.srv"
+  "msg/TFExtra.msg"
+  "msg/TFExtraData.msg"
   DEPENDENCIES
     builtin_interfaces
     geometry_msgs
