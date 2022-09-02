@@ -188,6 +188,7 @@ class Ros2Node(Node, Callbacks):
                 return response
 
     def get_all(self):
+        self.get_all_request.parent_frame_id = Callbacks.parent
         future = self.get_all_client.call_async(self.get_all_request)
         while True:
             if future.done():
@@ -465,6 +466,7 @@ on the left. Note the "persist" checkbox.""")
         reload_button.clicked.connect(reload_button_button_clicked)
 
         def get_all_button_clicked():
+            Callbacks.parent = self.parent_select_combo.currentText()
             Callbacks.trigger_get_all()
             self.output.append(Callbacks.information)
 

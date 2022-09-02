@@ -1,0 +1,2 @@
+[env]
+IDL_PACKAGE_FILTER = { value = "std_msgs;atr_object_msgs;sensor_msgs;geometry_msgs;tf2_msgs;scene_manipulation_msgs;visualization_msgs" }

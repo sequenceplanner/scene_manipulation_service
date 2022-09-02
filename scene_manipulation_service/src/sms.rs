@@ -164,6 +164,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let extra_features_service = node.create_service::<ExtraFeatures::Service>("extra_features")?;
 
     // offer a service to get all frames from tf (local buffer)
+    // TODO: add a parent id in the request so that the frames are tranformed in it 
     let get_all_transforms_service =
         node.create_service::<GetAllTransforms::Service>("get_all_transforms")?;
 
@@ -761,21 +762,44 @@ async fn get_all_transforms_server(
                 let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
                 let now = clock.get_now().unwrap();
                 let time_stamp = r2r::Clock::to_builtin_time(&now);
+                let mut transforms_to_publish = vec!();
+
+                for frame in frames_local {
+                    match request.message.parent_frame_id.as_str() {
+                        "" => transforms_to_publish.push(
+                            TransformStamped {
+                                header: Header {
+                                    stamp: time_stamp.clone(),
+                                    frame_id: frame.1.parent_frame_id.clone(),
+                                },
+                                child_frame_id: frame.1.child_frame_id.clone(),
+                                transform: frame.1.transform.clone(),
+                            }
+                        ),
+                        _ => match lookup_transform(
+                            &request.message.parent_frame_id,
+                            &frame.1.child_frame_id,
+                            &buffered_frames,
+                        ).await {
+                            Some(transform) => transforms_to_publish.push(
+                                TransformStamped {
+                                    header: Header {
+                                        stamp: time_stamp.clone(),
+                                        frame_id: request.message.parent_frame_id.clone(),
+                                    },
+                                    child_frame_id: frame.1.child_frame_id.clone(),
+                                    transform: transform.clone(),
+                                }
+                            ),
+                            None => ()
+                        }
+                    } 
+                };
+
                 let response = GetAllTransforms::Response {
                     success: true,
                     info: "".to_string(),
-                    names: frames_local.iter().map(|x| x.0.to_string()).collect(),
-                    transforms: frames_local
-                        .iter()
-                        .map(|x| TransformStamped {
-                            header: Header {
-                                stamp: time_stamp.clone(),
-                                frame_id: x.1.parent_frame_id.clone(),
-                            },
-                            child_frame_id: x.1.child_frame_id.clone(),
-                            transform: x.1.transform.clone(),
-                        })
-                        .collect(),
+                    transforms: transforms_to_publish,
                 };
                 request
                     .respond(response)
@@ -848,88 +872,7 @@ async fn get_all_extras_server(
                         },
                         None =>()
                     }
-                }
-
-                // frames_local.iter().for_each(|frame| match &frame.1.frame_type {
-                //     Some(has_type) => match request.message.frame_type.as_str() {
-                //         "" => filtered_correct_type.push(frame.1.clone()),
-                //         _ => match has_type == &request.message.frame_type {
-                //             true => match lookup_transform(
-                //                 &request.message.parent_frame_id,
-                //                 &frame.1.child_frame_id,
-                //                 &buffered_frames,
-                //             )
-                //             .await {
-                //                 Some(found) => {
-                //                     extras_list.push(
-                //                         TFExtraData {
-                //                             transform: TransformStamped {
-                //                                 header: Header {
-                //                                     stamp: time_stamp.clone(),
-                //                                     frame_id: request.message.parent_frame_id.clone()
-                //                                 },
-                //                                 child_frame_id: filtered.1.child_frame_id.clone(),
-                //                                 transform: found.clone()
-                //                             },
-                //                             frame_type: match filtered.1.frame_type {
-                //                                 Some(frame_type) => frame_type,
-                //                                 None => "".to_string()
-                //                             },
-                //                             next: match filtered.1.next {
-                //                                 Some(next) => next,
-                //                                 None => vec!()
-                //                             },
-                //                             zone: match filtered.1.zone {
-                //                                 Some(zone) => zone,
-                //                                 None => 0.0
-                //                             }
-                //                         }
-                //                     )
-                //                 },
-                //                 None =>()
-                //             },
-                //             false => ()
-                //         }
-                //     }
-                //     None => ()
-                // });
-
-                // frames_local.iter().filter(|frame| match frame.1.frame_type {
-                //     Some(f_type) => 
-                // } == request.message.frame_type).for_each(|filtered| {
-                //     match lookup_transform(
-                //         &request.message.parent_frame_id,
-                //         &filtered.1.child_frame_id,
-                //         &buffered_frames,
-                //     )
-                //     .await {
-                //         Some(found) => {
-                //             extras_list.push(
-                //                 TFExtraData {
-                //                     transform: TransformStamped {
-                //                         header: Header {
-                //                             stamp: time_stamp.clone(),
-                //                             frame_id: request.message.parent_frame_id.clone()
-                //                         },
-                //                         child_frame_id: filtered.1.child_frame_id.clone(),
-                //                         transform: found.clone()
-                //                     },
-                //                     frame_type: matchfiltered.1.frame_type,
-                //                     next: match filtered.1.next {
-                //                         Some(next) => next,
-                //                         None => vec!()
-                //                     },
-                //                     zone: match filtered.1.zone {
-                //                         Some(zone) => zone,
-                //                         None => 0.0
-                //                     }
-                //                 }
-                //             )
-                //         },
-                //         None =>()
-                //     }
-                // });
-                
+                }                
 
                 let response = GetAllExtra::Response {
                     success: true,
@@ -1986,7 +1929,7 @@ async fn marker_publisher_callback(
                             r: 0.0,
                             g: 255.0,
                             b: 0.0,
-                            a: 0.3,
+                            a: 0.15,
                         },
                         ..Marker::default()
                     };
@@ -2036,7 +1979,7 @@ async fn marker_publisher_callback(
                                         r: 0.0,
                                         g: 255.0,
                                         b: 0.0,
-                                        a: 0.3,
+                                        a: 0.15,
                                     },
                                     ..Marker::default()
                                 };
