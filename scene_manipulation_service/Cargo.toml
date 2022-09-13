@@ -19,3 +19,7 @@ glam = "0.20.3"
 [[bin]]
 name = "sms"
 path = "src/sms.rs"
+
+# [[bin]]
+# name = "sms_extra"
+# path = "src/sms_extra.rs"
