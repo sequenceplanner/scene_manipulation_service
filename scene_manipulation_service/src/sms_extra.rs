@@ -19,13 +19,16 @@ use std::io::BufReader;
 use std::sync::{Arc, Mutex};
 use std::{default, fmt};
 
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
 use scene_manipulation_service::common::lookup::{
     check_would_produce_cycle, lookup_transform, FrameData,
 };
 
 pub static NODE_ID: &'static str = "scene_manipulation_service_extra";
 pub static STATIC_BROADCAST_RATE: u64 = 1000;
-pub static ACTIVE_BROADCAST_RATE: u64 = 100;
+pub static ACTIVE_BROADCAST_RATE: u64 = 50;
 pub static BUFFER_MAINTAIN_RATE: u64 = 100;
 pub static ACTIVE_FRAME_LIFETIME: i32 = 3; //seconds
 pub static STATIC_FRAME_LIFETIME: i32 = 10; //seconds
@@ -120,7 +123,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             QosProfile::default(),
         )?;
 
-    let marker_timer = node.create_wall_timer(std::time::Duration::from_millis(200))?;
+    let marker_timer = node.create_wall_timer(std::time::Duration::from_millis(50))?;
     let buffered_frames_clone = buffered_frames.clone();
     tokio::task::spawn(async move {
         match marker_publisher_callback(
@@ -449,6 +452,12 @@ async fn maintain_buffer(
     }
 }
 
+fn calculate_hash<T: Hash>(t: &T) -> i32 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish() as i32
+}
+
 async fn marker_publisher_callback(
     zone_publisher: r2r::Publisher<MarkerArray>,
     path_publisher: r2r::Publisher<MarkerArray>,
@@ -465,20 +474,19 @@ async fn marker_publisher_callback(
         let mut path_markers: Vec<Marker> = vec![];
         let frames_local = buffered_frames.lock().unwrap().clone();
         // let decoded = serde_json::json!()
-        let mut id = 0;
+        // let mut id = 0;
         for frame in frames_local {
             // let extra_json = serde_json::json!(frame.1.extra);
             // let extra: FrameData = serde_json::from_value(extra_json).unwrap_or_default();
             match frame.1.zone {
                 Some(z) => {
-                    id = id + 1;
                     let indiv_marker = Marker {
                         header: Header {
                             stamp: time_stamp.clone(),
                             frame_id: frame.1.child_frame_id.to_string(),
                         },
                         ns: "".to_string(),
-                        id,
+                        id: calculate_hash(&frame.0),
                         type_: 3,
                         action: 0,
                         pose: Pose {
@@ -496,8 +504,14 @@ async fn marker_publisher_callback(
                         },
                         lifetime: Duration { sec: 2, nanosec: 0 },
                         scale: Vector3 {
-                            x: z,
-                            y: z,
+                            x: match z {
+                                0.0 => 0.1,
+                                _ => z
+                            },
+                            y: match z {
+                                0.0 => 0.1,
+                                _ => z
+                            },
                             z: 0.01,
                         },
                         color: ColorRGBA {
@@ -523,7 +537,6 @@ async fn marker_publisher_callback(
                         .await
                         {
                             Some(end_in_world) => {
-                                id = id + 1;
                                 let indiv_marker = Marker {
                                     header: Header {
                                         stamp: r2r::builtin_interfaces::msg::Time {
@@ -533,7 +546,7 @@ async fn marker_publisher_callback(
                                         frame_id: frame.1.child_frame_id.to_string(),
                                     },
                                     ns: "".to_string(),
-                                    id,
+                                    id: calculate_hash(&frame.0) + 1,
                                     type_: 0,
                                     action: 0,
                                     points: vec![
