@@ -4,13 +4,14 @@ use r2r::builtin_interfaces::msg::{Duration, Time};
 use r2r::geometry_msgs::msg::{Point, Pose, Quaternion, Transform, TransformStamped, Vector3};
 use r2r::scene_manipulation_msgs::msg::{TFExtra, TFExtraData};
 use r2r::scene_manipulation_msgs::srv::{
-    ExtraFeatures, GetAllTransforms, LookupTransform, ManipulateScene, GetAllExtra
+    ExtraFeatures, GetAllExtra, GetAllTransforms, LookupTransform, ManipulateScene,
 };
 use r2r::std_msgs::msg::{ColorRGBA, Header};
 use r2r::tf2_msgs::msg::TFMessage;
 use r2r::visualization_msgs::msg::{Marker, MarkerArray};
 use r2r::{ParameterValue, QosProfile, ServiceRequest};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs::{self, File};
@@ -18,7 +19,9 @@ use std::io::BufReader;
 use std::sync::{Arc, Mutex};
 use std::{default, fmt};
 
-use scene_manipulation_service::common::lookup::{lookup_transform, check_would_produce_cycle, FrameData};
+use scene_manipulation_service::common::lookup::{
+    check_would_produce_cycle, lookup_transform, FrameData,
+};
 
 pub static NODE_ID: &'static str = "scene_manipulation_service_extra";
 pub static STATIC_BROADCAST_RATE: u64 = 1000;
@@ -33,13 +36,22 @@ pub static MAX_TRANSFORM_CHAIN: u64 = 100;
 //     pub parent_frame_id: String,        // the id of the frame's parent frame
 //     pub child_frame_id: String,         // the id of the frame
 //     pub transform: Transform,           // where is the child frame defined in the parent
-//     pub active: bool,                   // only active frames are manipulatable   
+//     pub active: bool,                   // only active frames are manipulatable
 //     pub zone: Option<f64>,              // when are you "at" the frame, threshold, in meters
 //     pub next: Option<HashSet<String>>,  // this list can be used to store data for planners and visualizers
 //     pub time_stamp: Option<Time>,       // the idea is that all frames should have this, but some don't
 //     pub frame_type: Option<String>,     // can be used to distinguish if a frame is a waypoint, tag, human, etc.
 //     pub local: bool                     // is the frame published by sms or elsewhere, i.e. is it manipulatable or not
 // }
+
+// the extra stuff that is arriving - everything should be option because it can be anything or nothing
+#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
+pub struct ExtraData {
+    pub zone: Option<f64>,              // when are you "at" the frame, threshold, in meters
+    pub next: Option<HashSet<String>>,  // this list can be used to store data for planners and visualizers
+    pub time_stamp: Option<Time>,       // the idea is that all frames should have this, but some don't
+    pub frame_type: Option<String>,     // can be used to distinguish if a frame is a waypoint, tag, human, etc.
+}
 
 // the testing module
 // mod tests;
@@ -77,7 +89,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut node = r2r::Node::create(ctx, NODE_ID, "")?;
 
     // frames that exist on the tf_extra
-    let buffered_frames = Arc::new(Mutex::new(HashMap::<String, TFExtraData>::new()));
+    let buffered_frames = Arc::new(Mutex::new(HashMap::<String, FrameData>::new()));
 
     // listen to the active frames on the tf topic to see if a frame exists before broadcasting it
     // spawn a tokio task to listen to the active frames and add them to the buffer
@@ -85,17 +97,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         node.subscribe::<TFExtra>("tf_extra", QosProfile::best_effort(QosProfile::default()))?;
     let buffered_frames_clone = buffered_frames.clone();
     tokio::task::spawn(async move {
-        match extra_tf_listener_callback(extra_tf_listener, &buffered_frames_clone.clone())
-            .await
-        {
+        match extra_tf_listener_callback(extra_tf_listener, &buffered_frames_clone.clone()).await {
             Ok(()) => (),
             Err(e) => r2r::log_error!(NODE_ID, "Extra tf listener failed with: '{}'.", e),
         };
     });
 
     // offer a service to get all extras from the broadcaster
-    let get_all_extras_service =
-        node.create_service::<GetAllExtra::Service>("get_all_extras")?;
+    let get_all_extras_service = node.create_service::<GetAllExtra::Service>("get_all_extras")?;
 
     // publish the visualization markers for zone size for each frame
     let zone_marker_publisher = node
@@ -162,74 +171,155 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+// fn get_time_stamp() ->
+
+fn tf_extra_to_frame_data(extras: HashMap<String, TFExtraData>) -> HashMap<String, FrameData> {
+    let mut map = HashMap::<String, FrameData>::new();
+
+    let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
+    let now = clock.get_now().unwrap();
+    let time_stamp = r2r::Clock::to_builtin_time(&now);
+
+    extras.iter().for_each(|(k, v)| {
+        let extra_json = serde_json::json!(v.extra);
+        match serde_json::from_value(extra_json) {
+            Ok::<FrameData, _>(extra) => {
+                map.insert(
+                    k.clone(),
+                    FrameData {
+                        parent_frame_id: v.transform.header.frame_id.clone(),
+                        child_frame_id: v.transform.child_frame_id.clone(),
+                        transform: v.transform.transform.clone(),
+                        time_stamp: Some(time_stamp.clone()),
+                        zone: extra.zone,
+                        next: extra.next,
+                        frame_type: extra.frame_type,
+                        active: extra.active,
+                    },
+                );
+            }
+            Err(_) => (),
+        };
+    });
+    map
+}
+
+// fn frame_data_to_tf_extra(frames: HashMap<String, FrameData>) -> HashMap<String, TFExtraData> {
+//     let mut map = HashMap::<String, TFExtraData>::new();
+
+//     let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
+//     let now = clock.get_now().unwrap();
+//     let time_stamp = r2r::Clock::to_builtin_time(&now);
+
+//     frames.iter().for_each(|(k, v)| {
+//         let extra_json = serde_json::json!(v.extra);
+//         match serde_json::from_value(extra_json) {
+//             Ok::<FrameData, _>(extra) => {
+//                 map.insert(
+//                     k.clone(),
+//                     FrameData {
+//                         parent_frame_id: v.transform.header.frame_id.clone(),
+//                         child_frame_id: v.transform.child_frame_id.clone(),
+//                         transform: v.transform.transform.clone(),
+//                         time_stamp: Some(time_stamp),
+//                         zone: extra.zone,
+//                         next: extra.next,
+//                         frame_type: extra.frame_type,
+//                         active: extra.active,
+//                     },
+//                 );
+//             }
+//             Err(_) => (),
+//         };
+//     });
+//     map
+// }
+
 async fn get_all_extras_server(
     mut service: impl Stream<Item = ServiceRequest<GetAllExtra::Service>> + Unpin,
-    buffered_frames: &Arc<Mutex<HashMap<String, TFExtraData>>>,
+    buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         match service.next().await {
             Some(request) => {
                 let frames_local = buffered_frames.lock().unwrap().clone();
+                // let frames_local = tf_extra_to_frame_data(frames_local_pre);
                 let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
                 let now = clock.get_now().unwrap();
                 let time_stamp = r2r::Clock::to_builtin_time(&now);
-                let mut filtered_correct_type: Vec<FrameData>  = vec!();
-                let mut extras_list = vec!();
+                let mut filtered_correct_type: Vec<FrameData> = vec![];
+                let mut extras_list = vec![];
 
-                // NEED FN TF EXTRA DATA TO FRAME DATA
-
-                frames_local.iter().for_each(|frame| match &frame.1.transform.frame_type {
-                    Some(has_type) => match request.message.frame_type.as_str() {
-                        "" => filtered_correct_type.push(frame.1.clone()),
-                        _ => match has_type == &request.message.frame_type {
-                            true => filtered_correct_type.push(frame.1.clone()),
-                            false => ()
-                        }
-                    }
-                    None => ()
-                });
+                frames_local
+                    .iter()
+                    .for_each(|frame| match &frame.1.frame_type {
+                        Some(has_type) => match request.message.frame_type.as_str() {
+                            "" => filtered_correct_type.push(frame.1.clone()),
+                            _ => match has_type == &request.message.frame_type {
+                                true => filtered_correct_type.push(frame.1.clone()),
+                                false => (),
+                            },
+                        },
+                        None => (),
+                    });
 
                 for filtered in filtered_correct_type {
-                    match lookup::lookup_transform(
+                    match lookup_transform(
                         &request.message.parent_frame_id,
                         &filtered.child_frame_id,
-                        buffered_frames,
+                        &Arc::new(Mutex::new(frames_local.clone())),
                     )
-                    .await {
-                        Some(found) => {
-                            extras_list.push(
-                                TFExtraData {
-                                    transform: TransformStamped {
-                                        header: Header {
-                                            stamp: time_stamp.clone(),
-                                            frame_id: request.message.parent_frame_id.clone()
-                                        },
-                                        child_frame_id: filtered.child_frame_id.clone(),
-                                        transform: found.clone()
-                                    },
-                                    frame_type: match filtered.frame_type {
-                                        Some(frame_type) => frame_type,
-                                        None => "".to_string()
-                                    },
-                                    next: match filtered.next {
-                                        Some(next) => next.into_iter().collect(),
-                                        None => vec!()
-                                    },
-                                    zone: match filtered.zone {
-                                        Some(zone) => zone,
-                                        None => 0.0
-                                    }
-                                }
-                            )
-                        },
-                        None =>()
+                    .await
+                    {
+                        Some(found) => extras_list.push(TFExtraData {
+                            transform: TransformStamped {
+                                header: Header {
+                                    stamp: time_stamp.clone(),
+                                    frame_id: request.message.parent_frame_id.clone(),
+                                },
+                                child_frame_id: filtered.child_frame_id.clone(),
+                                transform: found.clone(),
+                            },
+                            extra: {
+                                let mut extra_map = serde_json::Map::<String, Value>::new();
+                                let frame_type_data = match filtered.frame_type {
+                                    Some(frame_type) => frame_type,
+                                    None => "".to_string(),
+                                };
+                                let zone_data = match filtered.zone {
+                                    Some(zone) => zone,
+                                    None => 0.0,
+                                };
+                                let next_data = match filtered.next {
+                                    Some(next) => next.into_iter().collect(),
+                                    None => vec![],
+                                };
+                                extra_map.insert(
+                                    "frame_type".to_string(),
+                                    Value::from(frame_type_data.clone()),
+                                );
+                                extra_map.insert("zone".to_string(), Value::from(zone_data));
+                                extra_map.insert(
+                                    "next".to_string(),
+                                    Value::from(
+                                        next_data
+                                            .clone()
+                                            .iter()
+                                            .map(|value| value.clone())
+                                            .collect::<Vec<String>>(),
+                                    ),
+                                );
+                                serde_json::Value::Object(extra_map).to_string()
+                            },
+                        }),
+                        None => (),
                     }
-                }                
+                }
 
                 let response = GetAllExtra::Response {
                     success: true,
                     info: "".to_string(),
-                    extras: TFExtra { data: extras_list } ,
+                    extras: TFExtra { data: extras_list },
                 };
                 request
                     .respond(response)
@@ -280,49 +370,42 @@ fn extra_success_response(msg: &str) -> ExtraFeatures::Response {
 // updates the broadcaster buffer with frames from the tf extra topic
 async fn extra_tf_listener_callback(
     mut subscriber: impl Stream<Item = TFExtra> + Unpin,
-    broadcasted_frames: &Arc<Mutex<HashMap<String, TFExtraData>>>,
+    buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         match subscriber.next().await {
             Some(message) => {
-                let mut frames_local = broadcasted_frames.lock().unwrap().clone();
-                let frames_local_clone = frames_local.clone();
-                message.data.iter().for_each(|t| {
-                    match frames_local_clone.get(&t.transform.child_frame_id.clone()) {
-                        Some(exists) => {
+                let mut frames_local = buffered_frames.lock().unwrap().clone();
+
+                message.data.iter().for_each(|v| {
+                    // println!("encoded {:?}", v);
+                    // let extra_json = serde_json::json!(v.extra);
+                    // match serde_json::from_value(extra_json) {
+                    match serde_json::from_str(&v.extra) {
+                        Ok::<ExtraData, _>(extra) => {
+                            let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
+                            let now = clock.get_now().unwrap();
+                            let time_stamp = r2r::Clock::to_builtin_time(&now);
+                            // println!("decoded {:?}", extra.zone);
                             frames_local.insert(
-                                t.transform.child_frame_id.clone(),
+                                v.transform.child_frame_id.clone(),
                                 FrameData {
-                                    parent_frame_id: t.transform.header.frame_id.clone(),
-                                    child_frame_id: t.transform.child_frame_id.clone(),
-                                    transform: t.transform.transform.clone(),
-                                    active: true,
-                                    time_stamp: Some(t.transform.header.stamp.clone()),
-                                    zone: exists.zone.clone(),
-                                    next: exists.next.clone(),
-                                    frame_type: Some(t.frame_type.clone())
+                                    parent_frame_id: v.transform.header.frame_id.clone(),
+                                    child_frame_id: v.transform.child_frame_id.clone(),
+                                    transform: v.transform.transform.clone(),
+                                    time_stamp: Some(time_stamp),
+                                    zone: extra.zone,
+                                    next: extra.next,
+                                    frame_type: extra.frame_type,
+                                    active: Some(true)
                                 },
                             );
-                        }, 
-                        None => {
-                            frames_local.insert(
-                                t.transform.child_frame_id.clone(),
-                                FrameData {
-                                    parent_frame_id: t.transform.header.frame_id.clone(),
-                                    child_frame_id: t.transform.child_frame_id.clone(),
-                                    transform: t.transform.transform.clone(),
-                                    active: true,
-                                    time_stamp: Some(t.transform.header.stamp.clone()),
-                                    zone: None,
-                                    next: None,
-                                    frame_type: Some(t.frame_type.clone())
-                                },
-                            );
-                        }, 
-                    }
-                    
+                        }
+                        Err(_) => () //println!("Doesn't work because: {:?}", e),
+                    };
                 });
-                *broadcasted_frames.lock().unwrap() = frames_local;
+
+                *buffered_frames.lock().unwrap() = frames_local;
             }
             None => {
                 r2r::log_error!(NODE_ID, "Subscriber did not get the message?");
@@ -338,6 +421,7 @@ async fn maintain_buffer(
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let frames_local = buffered_frames.lock().unwrap().clone();
+        // let frames_local = tf_extra_to_frame_data(frames_local_pre);
         let mut frames_local_reduced = frames_local.clone();
         let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
         let now = clock.get_now().unwrap();
@@ -368,25 +452,30 @@ async fn maintain_buffer(
 async fn marker_publisher_callback(
     zone_publisher: r2r::Publisher<MarkerArray>,
     path_publisher: r2r::Publisher<MarkerArray>,
-    buffered_frames: &Arc<Mutex<HashMap<String, TFExtraData>>>,
+    buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     mut timer: r2r::Timer,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
+
+        let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
+        let now = clock.get_now().unwrap();
+        let time_stamp = r2r::Clock::to_builtin_time(&now);
+
         let mut zone_markers: Vec<Marker> = vec![];
         let mut path_markers: Vec<Marker> = vec![];
         let frames_local = buffered_frames.lock().unwrap().clone();
         // let decoded = serde_json::json!()
         let mut id = 0;
         for frame in frames_local {
-            let extra_json = serde_json::json!(frame.1.extra);
-            let extra: FrameData = serde_json::from_value(extra_json).unwrap_or_default();
-            match extra.zone {
+            // let extra_json = serde_json::json!(frame.1.extra);
+            // let extra: FrameData = serde_json::from_value(extra_json).unwrap_or_default();
+            match frame.1.zone {
                 Some(z) => {
                     id = id + 1;
                     let indiv_marker = Marker {
                         header: Header {
-                            stamp: r2r::builtin_interfaces::msg::Time { sec: 0, nanosec: 0 },
-                            frame_id: frame.1.transform.child_frame_id.to_string(),
+                            stamp: time_stamp.clone(),
+                            frame_id: frame.1.child_frame_id.to_string(),
                         },
                         ns: "".to_string(),
                         id,
@@ -423,11 +512,15 @@ async fn marker_publisher_callback(
                 }
                 None => (),
             }
-            match extra.next {
+            match frame.1.next {
                 Some(n) => {
                     for enabled in n {
-                        match lookup_transform(&frame.1.transform.child_frame_id, &enabled, &buffered_frames)
-                            .await
+                        match lookup_transform(
+                            &frame.1.child_frame_id,
+                            &enabled,
+                            &buffered_frames,
+                        )
+                        .await
                         {
                             Some(end_in_world) => {
                                 id = id + 1;

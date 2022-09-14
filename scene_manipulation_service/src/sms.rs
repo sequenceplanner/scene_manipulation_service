@@ -1,3 +1,5 @@
+// A BIG TODO: disable reparenting and cloning if the parent and child is the same, breaks the tree
+
 use futures::{stream::Stream, StreamExt};
 use glam::{DAffine3, DQuat, DVec3};
 use r2r::builtin_interfaces::msg::{Time};
@@ -14,7 +16,7 @@ use serde_json::{Value};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs::{self, File};
-use std::io::BufReader;
+use std::io::{BufReader, BufWriter};
 use std::sync::{Arc, Mutex};
 use std::{fmt};
 
@@ -214,8 +216,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         match extra_frame_broadcaster_callback(
             extra_frame_broadcaster,
             extra_pub_timer,
-            &broadcasted_frames_clone,
-            &buffered_frames_clone
+            &buffered_frames_clone,
+            &broadcasted_frames_clone            
         )
         .await
         {
@@ -333,6 +335,38 @@ async fn list_frames_in_dir(path: &str) -> Result<Vec<String>, Box<dyn std::erro
     }
     Ok(scenario)
 }
+
+// async fn persist_frame_change(path: &str, frame: FrameData) -> bool {
+//     match fs::read_dir(path) {
+//         Ok(dir) => dir.for_each(|file| match file {
+//             Ok(entry) => match entry.path().to_str() {
+//                 Some(valid) => match valid.to_string() == format!("{}{}", path, frame.child_frame_id.clone()) {
+//                     true => {
+//                         println!("Changing existing frame {} permanently", frame.child_frame_id.clone());
+//                         match File::open(valid.clone()) {
+//                             Ok(file) => 
+//                         }
+//                         let writer = BufWriter::;
+//                     // }
+//                     },
+//                     false => {}
+//                 }
+//                 None => r2r::log_warn!(NODE_ID, "Path is not valid unicode."),
+//             },
+//             Err(e) => r2r::log_warn!(NODE_ID, "Reading entry failed with '{}'.", e),
+//         }),
+//         Err(e) => {
+//             r2r::log_warn!(
+//                 NODE_ID,
+//                 "Reading the scenario directory failed with: '{}'.",
+//                 e
+//             );
+//             r2r::log_warn!(NODE_ID, "Empty scenario is loaded/reloaded.");
+//             return false
+//         }
+//     }
+//     true
+// }
 
 // load or reload the scenario from json frame files
 // TODO: add a loop check before adding frames
@@ -1570,6 +1604,7 @@ async fn extra_frame_broadcaster_callback(
 
         // collect frames from tf and overwrite with data from the broadcaster buffer
         broadcasted_frames_local.iter().for_each(|(k, v)| {
+            // println!("{:?}", v);
             buffered_frames_local.insert(k.to_string(), v.clone()); }
         );
         let mut to_publish = vec![];
@@ -1602,6 +1637,7 @@ async fn extra_frame_broadcaster_callback(
                                 .collect::<Vec<String>>(),
                         ),
                     );
+                    // println!("map: {:?}", extra_map);
                     serde_json::Value::Object(extra_map).to_string()
                 },
             });

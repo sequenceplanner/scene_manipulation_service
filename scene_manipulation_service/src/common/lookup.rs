@@ -34,7 +34,6 @@ pub struct FrameData {
     pub active: Option<bool>, // only active frames are manipulatable. undefined will be added as active
 }
 
-
 // easier to manipulate transforms in glam's affine format
 fn tf_to_affine(t: &Transform) -> DAffine3 {
     DAffine3::from_rotation_translation(
