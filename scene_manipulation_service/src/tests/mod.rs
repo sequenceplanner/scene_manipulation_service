@@ -1,5 +1,5 @@
 mod loading;
-// mod quaternion;
+mod quaternion;
+mod cycles;
 mod lookup;
-// mod cycles;
 // mod buffer;

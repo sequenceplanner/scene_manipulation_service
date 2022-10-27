@@ -622,28 +622,27 @@
 
 
 use futures::{stream::Stream, StreamExt};
-use glam::{DAffine3, DQuat, DVec3};
 use r2r::builtin_interfaces::msg::{Duration, Time};
-use r2r::geometry_msgs::msg::{Point, Pose, Quaternion, Transform, TransformStamped, Vector3};
+use r2r::geometry_msgs::msg::{Point, Pose, Quaternion, TransformStamped, Vector3};
 use r2r::scene_manipulation_msgs::msg::{TFExtra, TFExtraData};
 use r2r::scene_manipulation_msgs::srv::{
-    ExtraFeatures, GetAllExtra, GetAllTransforms, LookupTransform, ManipulateScene,
+    ExtraFeatures, GetAllExtra, ManipulateScene,
 };
 use r2r::std_msgs::msg::{ColorRGBA, Header};
-use r2r::tf2_msgs::msg::TFMessage;
 use r2r::visualization_msgs::msg::{Marker, MarkerArray};
-use r2r::{ParameterValue, QosProfile, ServiceRequest};
+use r2r::{QosProfile, ServiceRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
-use std::fs::{self, File};
-use std::io::BufReader;
 use std::sync::{Arc, Mutex};
-use std::{default, fmt};
+use std::fmt;
 
-use scene_manipulation_service::common::lookup::{
-    check_would_produce_cycle, lookup_transform, FrameData,
+use scene_manipulation_service::{
+    common::{
+        frame_data::FrameData,
+    },
+    core::lookup::{lookup_transform},
 };
 
 pub static NODE_ID: &'static str = "scene_manipulation_service_extra";

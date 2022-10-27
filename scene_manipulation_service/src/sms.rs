@@ -1,27 +1,27 @@
 // A BIG TODO: disable reparenting and cloning if the parent and child is the same, breaks the tree
 
 use futures::{stream::Stream, StreamExt};
-use glam::{DAffine3, DQuat, DVec3};
-use r2r::builtin_interfaces::msg::{Time};
-use r2r::geometry_msgs::msg::{Quaternion, Transform, TransformStamped, Vector3};
+use r2r::geometry_msgs::msg::TransformStamped;
 use r2r::scene_manipulation_msgs::msg::{TFExtra, TFExtraData};
 use r2r::scene_manipulation_msgs::srv::{
     ExtraFeatures, GetAllTransforms, LookupTransform, ManipulateScene,
 };
-use r2r::std_msgs::msg::{Header};
+use r2r::std_msgs::msg::Header;
 use r2r::tf2_msgs::msg::TFMessage;
 use r2r::{ParameterValue, QosProfile, ServiceRequest};
-use serde::{Deserialize, Serialize};
-use serde_json::{Value};
+use scene_manipulation_service::common::errors::{extra_error_response, extra_success_response};
+use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
-use std::fs::{self, File};
-use std::io::{BufReader, BufWriter};
 use std::sync::{Arc, Mutex};
-use std::{fmt};
 
-use scene_manipulation_service::common::lookup::{lookup_transform, check_would_produce_cycle, FrameData};
-// use scene_manipulation_service::common::*;
+use scene_manipulation_service::{
+    common::{
+        files::{list_frames_in_dir, load_scenario, reload_scenario},
+        frame_data::FrameData,
+    },
+    core::lookup::{check_would_produce_cycle, lookup_transform},
+};
 
 pub static NODE_ID: &'static str = "scene_manipulation_service";
 pub static STATIC_BROADCAST_RATE: u64 = 1000;
@@ -32,48 +32,7 @@ pub static ACTIVE_FRAME_LIFETIME: i32 = 3; //seconds
 pub static STATIC_FRAME_LIFETIME: i32 = 10; //seconds
 pub static MAX_TRANSFORM_CHAIN: u64 = 100;
 
-// #[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq)]
-// pub struct FrameData {
-//     // mandatory fields in the json files
-//     pub parent_frame_id: String, // the id of the frame's parent frame
-//     pub child_frame_id: String,  // the id of the frame
-//     pub transform: Transform,    // where is the child frame defined in the parent
-//     // optional fields in the json files. will be encoded to a json string before sent out
-//     pub time_stamp: Option<Time>, // the idea is that all frames should have this, but some don't
-//     pub zone: Option<f64>,        // when are you "at" the frame, threshold, in meters
-//     pub next: Option<HashSet<String>>, // this list can be used to store data for planners and visualizers
-//     pub frame_type: Option<String>, // can be used to distinguish if a frame is a waypoint, tag, human, etc.
-//     pub active: Option<bool>, // only active frames are manipulatable. undefined will be added as active
-// }
-
-// the testing module
-// mod tests;
-
-// some error handling utils
-#[derive(Debug, Clone)]
-struct ErrorMsg {
-    info: String,
-}
-
-impl ErrorMsg {
-    fn new(info: &str) -> ErrorMsg {
-        ErrorMsg {
-            info: info.to_string(),
-        }
-    }
-}
-
-impl fmt::Display for ErrorMsg {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.info)
-    }
-}
-
-impl Error for ErrorMsg {
-    fn description(&self) -> &str {
-        &self.info
-    }
-}
+mod tests;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -106,11 +65,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let scenario_res = list_frames_in_dir(&path_param).await;
+    let scenario_res = list_frames_in_dir(&path_param, NODE_ID).await;
 
     let init_loaded = match scenario_res {
         Ok(scenario) => {
-            let loaded = load_scenario(&scenario).await;
+            let loaded = load_scenario(&scenario, NODE_ID);
             r2r::log_info!(
                 NODE_ID,
                 "Initial frames added to the scene: '{:?}'.",
@@ -217,7 +176,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             extra_frame_broadcaster,
             extra_pub_timer,
             &buffered_frames_clone,
-            &broadcasted_frames_clone            
+            &broadcasted_frames_clone,
         )
         .await
         {
@@ -309,108 +268,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn list_frames_in_dir(path: &str) -> Result<Vec<String>, Box<dyn std::error::Error + Send>> {
-    let mut scenario = vec![];
-    match fs::read_dir(path) {
-        Ok(dir) => dir.for_each(|file| match file {
-            Ok(entry) => match entry.path().to_str() {
-                Some(valid) => scenario.push(valid.to_string()),
-                None => r2r::log_warn!(NODE_ID, "Path is not valid unicode."),
-            },
-            Err(e) => r2r::log_warn!(NODE_ID, "Reading entry failed with '{}'.", e),
-        }),
-        Err(e) => {
-            r2r::log_warn!(
-                NODE_ID,
-                "Reading the scenario directory failed with: '{}'.",
-                e
-            );
-            r2r::log_warn!(NODE_ID, "Empty scenario is loaded/reloaded.");
-            return Err(Box::new(ErrorMsg::new(&format!(
-                "Reading the scenario directory failed with: '{}'. 
-                    Empty scenario is loaded/reloaded.",
-                e
-            ))));
-        }
-    }
-    Ok(scenario)
-}
-
-// async fn persist_frame_change(path: &str, frame: FrameData) -> bool {
-//     match fs::read_dir(path) {
-//         Ok(dir) => dir.for_each(|file| match file {
-//             Ok(entry) => match entry.path().to_str() {
-//                 Some(valid) => match valid.to_string() == format!("{}{}", path, frame.child_frame_id.clone()) {
-//                     true => {
-//                         println!("Changing existing frame {} permanently", frame.child_frame_id.clone());
-//                         match File::open(valid.clone()) {
-//                             Ok(file) => 
-//                         }
-//                         let writer = BufWriter::;
-//                     // }
-//                     },
-//                     false => {}
-//                 }
-//                 None => r2r::log_warn!(NODE_ID, "Path is not valid unicode."),
-//             },
-//             Err(e) => r2r::log_warn!(NODE_ID, "Reading entry failed with '{}'.", e),
-//         }),
-//         Err(e) => {
-//             r2r::log_warn!(
-//                 NODE_ID,
-//                 "Reading the scenario directory failed with: '{}'.",
-//                 e
-//             );
-//             r2r::log_warn!(NODE_ID, "Empty scenario is loaded/reloaded.");
-//             return false
-//         }
-//     }
-//     true
-// }
-
 // load or reload the scenario from json frame files
 // TODO: add a loop check before adding frames
-async fn load_scenario(scenario: &Vec<String>) -> HashMap<String, FrameData> {
-    let mut frame_datas: HashMap<String, FrameData> = HashMap::new();
-
-    // add the world frame explicitly so that transforms can be looked up to and from it
-    frame_datas.insert(
-        "world".to_string(),
-        FrameData {
-            parent_frame_id: "world_origin".to_string(),
-            child_frame_id: "world".to_string(),
-            active: Some(false),
-            transform: Transform {
-                rotation: Quaternion {
-                    x: 0.0,
-                    y: 0.0,
-                    z: 0.0,
-                    w: 1.0,
-                },
-                translation: Vector3 {
-                    ..Default::default()
-                },
-            },
-            ..Default::default()
-        },
-    );
-
-    scenario.iter().for_each(|x| match File::open(x) {
-        Ok(file) => {
-            let reader = BufReader::new(file);
-            match serde_json::from_reader(reader) {
-                Ok::<FrameData, _>(json) => {
-                    frame_datas.insert(json.child_frame_id.clone(), json.clone());
-                }
-                Err(e) => {
-                    r2r::log_warn!(NODE_ID, "Serde failed with: '{}'.", e);
-                }
-            }
-        }
-        Err(e) => r2r::log_warn!(NODE_ID, "Opening json file failed with: '{}'.", e),
-    });
-    frame_datas
-}
 
 // TODO: sort out information in the messages when responding
 async fn scene_manipulation_server(
@@ -495,24 +354,6 @@ async fn scene_manipulation_server(
     }
 }
 
-fn extra_error_response(msg: &str) -> ExtraFeatures::Response {
-    let info = msg.to_string();
-    // r2r::log_error!(NODE_ID, "{}", info);
-    ExtraFeatures::Response {
-        success: false,
-        info,
-    }
-}
-
-fn extra_success_response(msg: &str) -> ExtraFeatures::Response {
-    let info = msg.to_string();
-    // r2r::log_info!(NODE_ID, "{}", info);
-    ExtraFeatures::Response {
-        success: true,
-        info,
-    }
-}
-
 async fn extra_features_server(
     mut service: impl Stream<Item = ServiceRequest<ExtraFeatures::Service>> + Unpin,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -526,7 +367,8 @@ async fn extra_features_server(
                         "Got 'reload_scenario' request: {:?}.",
                         request.message
                     );
-                    let response = reload_scenario(&request.message, &broadcasted_frames).await;
+                    let response =
+                        reload_scenario(&request.message, &broadcasted_frames, NODE_ID).await;
                     request
                         .respond(response)
                         .expect("Could not send service response.");
@@ -569,27 +411,6 @@ async fn extra_features_server(
             },
             None => {}
         }
-    }
-}
-
-async fn reload_scenario(
-    message: &r2r::scene_manipulation_msgs::srv::ExtraFeatures::Request,
-    broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
-) -> ExtraFeatures::Response {
-    match list_frames_in_dir(&message.scenario_path).await {
-        Ok(scenario) => {
-            let loaded = load_scenario(&scenario).await;
-            let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
-            for x in &loaded {
-                local_broadcasted_frames.insert(x.0.clone(), x.1.clone());
-            }
-            *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
-            extra_success_response(&format!(
-                "Reloaded frames in the scene: '{:?}'.",
-                loaded.keys()
-            ))
-        }
-        Err(e) => extra_error_response(&format!("Reloading the scenario failed with: '{:?}'.", e)),
     }
 }
 
@@ -1605,8 +1426,8 @@ async fn extra_frame_broadcaster_callback(
         // collect frames from tf and overwrite with data from the broadcaster buffer
         broadcasted_frames_local.iter().for_each(|(k, v)| {
             // println!("{:?}", v);
-            buffered_frames_local.insert(k.to_string(), v.clone()); }
-        );
+            buffered_frames_local.insert(k.to_string(), v.clone());
+        });
         let mut to_publish = vec![];
 
         buffered_frames_local.iter().for_each(|(_, v)| {
