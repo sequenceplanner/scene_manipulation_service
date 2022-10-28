@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::common::{errors::ErrorMsg, frame_data::FrameData};
 
-use super::errors::{extra_success_response, extra_error_response};
+use super::errors::{extra_error_response, extra_success_response};
 
 pub async fn list_frames_in_dir(
     path: &str,
@@ -84,7 +84,7 @@ pub fn load_scenario(scenario: &Vec<String>, node_id: &str) -> HashMap<String, F
 pub async fn reload_scenario(
     message: &r2r::scene_manipulation_msgs::srv::ExtraFeatures::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
-    node_id: &str
+    node_id: &str,
 ) -> ExtraFeatures::Response {
     match list_frames_in_dir(&message.scenario_path, node_id).await {
         Ok(scenario) => {

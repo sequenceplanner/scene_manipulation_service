@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-use r2r::scene_manipulation_msgs::srv::ExtraFeatures;
+use r2r::scene_manipulation_msgs::srv::{ExtraFeatures, ManipulateScene};
 
 #[derive(Debug, Clone)]
 pub struct ErrorMsg {
@@ -41,6 +41,24 @@ pub fn extra_success_response(msg: &str) -> ExtraFeatures::Response {
     let info = msg.to_string();
     // r2r::log_info!(NODE_ID, "{}", info);
     ExtraFeatures::Response {
+        success: true,
+        info,
+    }
+}
+
+pub fn main_error_response(msg: &str) -> ManipulateScene::Response {
+    let info = msg.to_string();
+    // r2r::log_error!(NODE_ID, "{}", info);
+    ManipulateScene::Response {
+        success: false,
+        info,
+    }
+}
+
+pub fn main_success_response(msg: &str) -> ManipulateScene::Response {
+    let info = msg.to_string();
+    // r2r::log_info!(NODE_ID, "{}", info);
+    ManipulateScene::Response {
         success: true,
         info,
     }

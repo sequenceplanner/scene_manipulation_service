@@ -1,8 +1,12 @@
+use crate::common::frame_data::FrameData;
+use futures::{Stream, StreamExt};
 use glam::{DAffine3, DQuat, DVec3};
-use r2r::geometry_msgs::msg::{Quaternion, Transform, Vector3};
+use r2r::geometry_msgs::msg::{Quaternion, Transform, TransformStamped, Vector3};
+use r2r::scene_manipulation_msgs::srv::LookupTransform;
+use r2r::std_msgs::msg::Header;
+use r2r::ServiceRequest;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use crate::common::frame_data::FrameData;
 
 pub static MAX_TRANSFORM_CHAIN: u64 = 100;
 
@@ -198,4 +202,65 @@ pub fn check_would_produce_cycle(
     let mut frames_local = frames.clone();
     frames_local.insert(frame.child_frame_id.clone(), frame.clone());
     is_cyclic_all(&frames_local)
+}
+
+pub async fn transform_lookup_server(
+    mut service: impl Stream<Item = ServiceRequest<LookupTransform::Service>> + Unpin,
+    buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+    node_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    loop {
+        match service.next().await {
+            Some(request) => match lookup_transform(
+                &request.message.parent_frame_id,
+                &request.message.child_frame_id,
+                &buffered_frames,
+            )
+            .await
+            {
+                Some(transform) => {
+                    let info = &format!(
+                        "Found transform from '{}' to '{}'.",
+                        &request.message.parent_frame_id, &request.message.child_frame_id
+                    );
+                    let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
+                    let now = clock.get_now().unwrap();
+                    let time_stamp = r2r::Clock::to_builtin_time(&now);
+                    let response = LookupTransform::Response {
+                        success: true,
+                        info: info.to_string(),
+                        transform: TransformStamped {
+                            header: Header {
+                                stamp: time_stamp,
+                                frame_id: request.message.parent_frame_id.clone(),
+                            },
+                            child_frame_id: request.message.child_frame_id.clone(),
+                            transform,
+                        },
+                    };
+                    request
+                        .respond(response)
+                        .expect("Could not send service response.");
+                    continue;
+                }
+                None => {
+                    let info = &format!(
+                        "Failed to lookup transform from '{}' to '{}'.",
+                        &request.message.parent_frame_id, &request.message.child_frame_id
+                    );
+                    r2r::log_warn!(node_id, "{}", info);
+                    let response = LookupTransform::Response {
+                        success: false,
+                        info: info.to_string(),
+                        ..Default::default()
+                    };
+                    request
+                        .respond(response)
+                        .expect("Could not send service response.");
+                    continue;
+                }
+            },
+            None => {}
+        }
+    }
 }
