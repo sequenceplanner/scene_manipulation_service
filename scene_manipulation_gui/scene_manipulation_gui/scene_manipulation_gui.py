@@ -7,7 +7,7 @@ import tf2_ros
 from rclpy.node import Node
 from geometry_msgs.msg import TransformStamped
 from rclpy.duration import Duration
-from scene_manipulation_msgs.srv import LookupTransform, ManipulateScene, ExtraFeatures, GetAllTransforms
+from scene_manipulation_msgs.srv import LookupTransform, ManipulateScene, ManipulateExtras, GetAllTransforms
 from sensor_msgs.msg import JointState
 
 import threading
@@ -78,9 +78,9 @@ class Ros2Node(Node, Callbacks):
                 "Manipulate Scene Service not available, waiting again..."
             )
 
-        self.extra_features_client = self.create_client(ExtraFeatures, "extra_features")
-        self.extra_features_request = ExtraFeatures.Request()
-        self.extra_features_response = ExtraFeatures.Response()
+        self.extra_features_client = self.create_client(ManipulateExtras, "extra_features")
+        self.extra_features_request = ManipulateExtras.Request()
+        self.extra_features_response = ManipulateExtras.Response()
 
         while not self.extra_features_client.wait_for_service(timeout_sec=1.0):
             self.get_logger().warn(

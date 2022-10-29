@@ -9,7 +9,7 @@ use r2r::{
     std_msgs::msg::Header, tf2_msgs::msg::TFMessage, ServiceRequest,
 };
 
-use crate::{lookup_transform, FrameData};
+use crate::{lookup_transform, FrameData, ExtraData};
 
 pub async fn get_all_transforms_server(
     mut service: impl Stream<Item = ServiceRequest<GetAllTransforms::Service>> + Unpin,
@@ -84,7 +84,7 @@ pub async fn static_frame_broadcaster_callback(
         let transforms_local = frames.lock().unwrap().clone();
         let mut updated_transforms = vec![];
 
-        transforms_local.iter().for_each(|(_, v)| match v.active {
+        transforms_local.iter().for_each(|(_, v)| match v.extra_data.active {
             Some(false) => {
                 updated_transforms.push(TransformStamped {
                     header: Header {
@@ -131,7 +131,7 @@ pub async fn active_frame_broadcaster_callback(
         let transforms_local = frames.lock().unwrap().clone();
         let mut updated_transforms = vec![];
 
-        transforms_local.iter().for_each(|(_, v)| match v.active {
+        transforms_local.iter().for_each(|(_, v)| match v.extra_data.active {
             Some(true) | None => {
                 updated_transforms.push(TransformStamped {
                     header: Header {
@@ -181,11 +181,11 @@ pub async fn active_tf_listener_callback(
                             parent_frame_id: t.header.frame_id.clone(),
                             child_frame_id: t.child_frame_id.clone(),
                             transform: t.transform.clone(),
-                            active: Some(true),
-                            time_stamp: Some(t.header.stamp.clone()),
-                            zone: None,
-                            next: None,
-                            frame_type: None,
+                            extra_data: ExtraData {
+                                active: Some(true),
+                                time_stamp: Some(t.header.stamp.clone()),
+                                ..Default::default()
+                            }
                         },
                     );
                 });
@@ -216,11 +216,11 @@ pub async fn static_tf_listener_callback(
                             parent_frame_id: t.header.frame_id.clone(),
                             child_frame_id: t.child_frame_id.clone(),
                             transform: t.transform.clone(),
-                            active: Some(false),
-                            time_stamp: Some(t.header.stamp.clone()),
-                            zone: None,
-                            next: None,
-                            frame_type: None,
+                            extra_data: ExtraData {
+                                active: Some(false),
+                                time_stamp: Some(t.header.stamp.clone()),
+                                ..Default::default()
+                            }
                         },
                     );
                 });
@@ -246,8 +246,8 @@ pub async fn maintain_buffer(
         let now = clock.get_now().unwrap();
         let current_time = r2r::Clock::to_builtin_time(&now);
         frames_local.iter().for_each(|(k, v)| {
-            let stamp = v.clone().time_stamp.unwrap(); // TODO: handle this nicer
-            match v.active {
+            let stamp = v.clone().extra_data.time_stamp.unwrap(); // TODO: handle this nicer
+            match v.extra_data.active {
                 Some(true) | None => match current_time.sec > stamp.sec + active_frame_lifetime {
                     true => {
                         frames_local_reduced.remove(k);

@@ -25,7 +25,7 @@ async fn test_lookup_1() {
         FrameData {
             parent_frame_id: "world_origin".to_string(),
             child_frame_id: "world".to_string(),
-            active: Some(false),
+            // active: Some(false),
             ..Default::default()
         },
     );
@@ -92,7 +92,7 @@ async fn test_lookup_2() {
         FrameData {
             parent_frame_id: "world_origin".to_string(),
             child_frame_id: "world".to_string(),
-            active: Some(false),
+            // active: Some(false),
             ..Default::default()
         },
     );

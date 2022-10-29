@@ -1,9 +1,0 @@
-string frame_type
-string parent_frame_id
-
----
-
-# Reply
-bool success
-string info
-scene_manipulation_msgs/TFExtra extras

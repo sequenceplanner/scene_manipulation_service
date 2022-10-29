@@ -20,7 +20,7 @@ fn world_frame() -> FrameData {
     FrameData {
         parent_frame_id: "world_origin".to_string(),
         child_frame_id: "world".to_string(),
-        active: Some(false),
+        // active: Some(false),
         ..Default::default()
     }
 }

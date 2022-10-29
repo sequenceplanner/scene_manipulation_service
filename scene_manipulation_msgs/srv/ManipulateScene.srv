@@ -19,6 +19,9 @@ geometry_msgs/Transform transform
 # No persist for now, if you want to persist the change, edit the json file manually
 # bool persist
 
+# This map can contain additional data like mesh location, zone, etc.
+string extra
+
 ---
 
 # Reply

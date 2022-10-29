@@ -2,7 +2,6 @@ import rclpy
 from rclpy.node import Node
 from interactive_markers import InteractiveMarkerServer
 from builtin_interfaces.msg import Time
-from scene_manipulation_msgs.srv import ExtraFeatures
 from geometry_msgs.msg import TransformStamped
 from geometry_msgs.msg import Transform
 from scene_manipulation_msgs.srv import LookupTransform

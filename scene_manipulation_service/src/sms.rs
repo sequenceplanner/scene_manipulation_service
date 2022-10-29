@@ -1,6 +1,6 @@
 use r2r::scene_manipulation_msgs::msg::TFExtra;
 use r2r::scene_manipulation_msgs::srv::{
-    ExtraFeatures, GetAllTransforms, LookupTransform, ManipulateScene,
+    ManipulateExtras, GetAllTransforms, LookupTransform, ManipulateScene,
 };
 use r2r::tf2_msgs::msg::TFMessage;
 use r2r::{ParameterValue, QosProfile};
@@ -126,6 +126,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         };
     });
 
+    // this should go to gpss
+    // offer a service to get all extras from the broadcaster
+    // let get_all_extras_service = node.create_service::<GetAllExtra::Service>("get_all_extras")?;
+    // let buffered_frames_clone = buffered_frames.clone();
+    // tokio::task::spawn(async move {
+    //     let result =
+    //         get_all_extras_server(get_all_extras_service, &buffered_frames_clone.clone()).await;
+    //     match result {
+    //         Ok(()) => r2r::log_info!(NODE_ID, "Get All Extras Service call succeeded."),
+    //         Err(e) => r2r::log_error!(NODE_ID, "Get All Extras Service call failed with: {}.", e),
+    //     };
+    // });
+
     // publish the active frames to tf
     // spawn a tokio task to handle publishing active frames
     let active_pub_timer =
@@ -179,7 +192,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         QosProfile::transient_local(QosProfile::default()),
     )?;
 
-    // send out all, otherwise the extra node can't look up the transforms...
     let broadcasted_frames_clone = broadcasted_frames.clone();
     let buffered_frames_clone = buffered_frames.clone();
     tokio::task::spawn(async move {
@@ -265,8 +277,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         };
     });
 
+    // this can remain here since it is connected to the GUI
     // offer a service for extra features, like the teaching marker, zones, paths, etc.
-    let extra_features_service = node.create_service::<ExtraFeatures::Service>("extra_features")?;
+    let extra_features_service = node.create_service::<ManipulateExtras::Service>("extra_features")?;
     let broadcasted_frames_clone = broadcasted_frames.clone();
     tokio::task::spawn(async move {
         let result =

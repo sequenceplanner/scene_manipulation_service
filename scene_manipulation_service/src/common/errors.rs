@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt;
 
-use r2r::scene_manipulation_msgs::srv::{ExtraFeatures, ManipulateScene};
+use r2r::scene_manipulation_msgs::srv::{ManipulateExtras, ManipulateScene};
 
 #[derive(Debug, Clone)]
 pub struct ErrorMsg {
@@ -28,19 +28,19 @@ impl Error for ErrorMsg {
     }
 }
 
-pub fn extra_error_response(msg: &str) -> ExtraFeatures::Response {
+pub fn extra_error_response(msg: &str) -> ManipulateExtras::Response {
     let info = msg.to_string();
     // r2r::log_error!(NODE_ID, "{}", info);
-    ExtraFeatures::Response {
+    ManipulateExtras::Response {
         success: false,
         info,
     }
 }
 
-pub fn extra_success_response(msg: &str) -> ExtraFeatures::Response {
+pub fn extra_success_response(msg: &str) -> ManipulateExtras::Response {
     let info = msg.to_string();
     // r2r::log_info!(NODE_ID, "{}", info);
-    ExtraFeatures::Response {
+    ManipulateExtras::Response {
         success: true,
         info,
     }

@@ -1,16 +1,18 @@
 use futures::{stream::Stream, StreamExt};
 use r2r::scene_manipulation_msgs::srv::ManipulateScene;
 use r2r::ServiceRequest;
-use std::collections::HashMap;
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use crate::common::errors::{main_error_response, main_success_response};
 use crate::common::frame_data::FrameData;
-use crate::{check_would_produce_cycle, lookup_transform};
+use crate::{check_would_produce_cycle, lookup_transform, ExtraData};
 
 // A BIG TODO: disable reparenting and cloning if the parent and child is the same, breaks the tree
 // TODO: add a loop check before adding frames
 // TODO: sort out information in the messages when responding
+// TODO: persist changes!
 pub async fn scene_manipulation_server(
     mut service: impl Stream<Item = ServiceRequest<ManipulateScene::Service>> + Unpin,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -94,7 +96,7 @@ pub async fn scene_manipulation_server(
     }
 }
 
-async fn add_frame(
+pub async fn add_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -106,34 +108,20 @@ async fn add_frame(
     let now = clock.get_now().unwrap();
     let time_stamp = r2r::Clock::to_builtin_time(&now);
 
-    let frame_to_add = FrameData {
-        parent_frame_id: message.parent_frame_id.clone(),
-        child_frame_id: message.child_frame_id.clone(),
-        transform: message.transform.clone(),
-        active: Some(true),
-        time_stamp: Some(time_stamp),
-        zone: None,
-        next: None,
-        frame_type: None,
-        // local: Some(true)
-    };
-
-    match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" {
-        false => match local_buffered_frames.contains_key(&message.child_frame_id) {
-            false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
-                false => match local_buffered_frames.contains_key(&message.parent_frame_id) {
-                    false => {
-                        local_broadcasted_frames
-                            .insert(message.child_frame_id.clone(), frame_to_add);
-                        *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
-                        main_success_response(&format!(
-                            "Frame '{}' added to the scene.",
-                            message.child_frame_id
-                        ))
-                    }
-                    true => {
-                        match check_would_produce_cycle(&frame_to_add, &local_buffered_frames) {
-                            (false, _) => {
+    match serde_json::from_str(&message.extra) {
+        Ok::<ExtraData, _>(extras) => {
+            let frame_to_add = FrameData {
+                parent_frame_id: message.parent_frame_id.clone(),
+                child_frame_id: message.child_frame_id.clone(),
+                transform: message.transform.clone(),
+                extra_data: extras
+            };
+        
+            match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" {
+                false => match local_buffered_frames.contains_key(&message.child_frame_id) {
+                    false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
+                        false => match local_buffered_frames.contains_key(&message.parent_frame_id) {
+                            false => {
                                 local_broadcasted_frames
                                     .insert(message.child_frame_id.clone(), frame_to_add);
                                 *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
@@ -142,24 +130,41 @@ async fn add_frame(
                                     message.child_frame_id
                                 ))
                             }
-                            (true, cause) => main_error_response(&format!(
-                                "Adding frame '{}' would produce a cycle. Not added: '{}'",
-                                &message.child_frame_id, cause
-                            )),
+                            true => {
+                                match check_would_produce_cycle(&frame_to_add, &local_buffered_frames) {
+                                    (false, _) => {
+                                        local_broadcasted_frames
+                                            .insert(message.child_frame_id.clone(), frame_to_add);
+                                        *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
+                                        main_success_response(&format!(
+                                            "Frame '{}' added to the scene.",
+                                            message.child_frame_id
+                                        ))
+                                    }
+                                    (true, cause) => main_error_response(&format!(
+                                        "Adding frame '{}' would produce a cycle. Not added: '{}'",
+                                        &message.child_frame_id, cause
+                                    )),
+                                }
+                            }
+                        },
+                        true => {
+                            tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
+                            match local_buffered_frames.contains_key(&message.child_frame_id) {
+                                false => main_error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
+                                true => main_error_response("Frame already exists."),
+                            }
                         }
-                    }
+                    },
+                    true => main_error_response("Frame already exists."),
                 },
-                true => {
-                    tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
-                    match local_buffered_frames.contains_key(&message.child_frame_id) {
-                        false => main_error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
-                        true => main_error_response("Frame already exists."),
-                    }
-                }
-            },
-            true => main_error_response("Frame already exists."),
-        },
-        true => main_error_response("Frame 'world' is reserved as the universal tree root."),
+                true => main_error_response(&format!("Frame '{}' is reserved as the universal tree root.", &message.child_frame_id)),
+            }
+        }, 
+        Err(cause) => main_error_response(&format!(
+            "Failed to decode message.extras string. The 'extra_data' field is probably missing in the message. Not added: '{}'",
+            cause
+        ))
     }
 }
 
@@ -181,7 +186,7 @@ async fn remove_frame(
         let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
         let mut local_buffered_frames = buffered_frames.lock().unwrap().clone();
         match local_broadcasted_frames.get(&message.child_frame_id) {
-            Some(frame) => match frame.active {
+            Some(frame) => match frame.extra_data.active {
                 Some(true) | None => match local_broadcasted_frames.remove(&message.child_frame_id)
                 {
                     Some(_) => match local_buffered_frames.remove(&message.child_frame_id) {
@@ -244,6 +249,7 @@ async fn rename_frame(
             parent_frame_id: message.parent_frame_id.to_string(),
             new_frame_id: message.new_frame_id.to_string(),
             transform: message.transform.clone(),
+            ..Default::default()
         },
         &broadcasted_frames,
         &buffered_frames,
@@ -264,6 +270,7 @@ async fn rename_frame(
                         parent_frame_id: frame.parent_frame_id.to_string(),
                         new_frame_id: message.new_frame_id.to_string(),
                         transform: frame.transform.clone(),
+                        ..Default::default()
                     },
                     &broadcasted_frames,
                     &buffered_frames,
@@ -314,12 +321,14 @@ async fn move_frame(
                                             parent_frame_id: message.parent_frame_id.clone(),
                                             child_frame_id: message.child_frame_id.clone(),
                                             transform: message.transform.clone(),
-                                            active: Some(true),
-                                            time_stamp: Some(time_stamp),
-                                            zone: frame.zone.clone(),
-                                            next: frame.next.clone(),
-                                            frame_type: frame.frame_type.clone(),
-                                            // local: Some(true)
+                                            extra_data: ExtraData {
+                                                active: Some(true),
+                                                time_stamp: Some(time_stamp),
+                                                zone: frame.extra_data.zone.clone(),
+                                                next: frame.extra_data.next.clone(),
+                                                frame_type: frame.extra_data.frame_type.clone(),
+                                                ..Default::default()
+                                            }
                                         }
                                     );
                                     *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
@@ -345,11 +354,15 @@ async fn move_frame(
                                     parent_frame_id: message.parent_frame_id.clone(),
                                     child_frame_id: message.child_frame_id.clone(),
                                     transform: message.transform.clone(),
-                                    active: Some(true),
-                                    time_stamp: Some(time_stamp),
-                                    zone: frame.zone.clone(),
-                                    next: frame.next.clone(),
-                                    frame_type: frame.frame_type.clone(),
+                                    extra_data: ExtraData {
+                                        active: Some(true),
+                                        time_stamp: Some(time_stamp),
+                                        zone: frame.extra_data.zone.clone(),
+                                        next: frame.extra_data.next.clone(),
+                                        frame_type: frame.extra_data.frame_type.clone(),
+                                        ..Default::default()
+                                    }
+                                    
                                 }
                             );
                             *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
@@ -405,12 +418,15 @@ async fn teach_frame(
                                 parent_frame_id: message.parent_frame_id.clone(),
                                 child_frame_id: message.child_frame_id.clone(),
                                 transform,
-                                active: Some(true),
-                                time_stamp: Some(time_stamp),
-                                zone: frame.zone.clone(),
-                                next: frame.next.clone(),
-                                frame_type: frame.frame_type.clone(),
-                                // local: Some(true)
+                                extra_data: ExtraData {
+                                    active: Some(true),
+                                    time_stamp: Some(time_stamp),
+                                    zone: frame.extra_data.zone.clone(),
+                                    next: frame.extra_data.next.clone(),
+                                    frame_type: frame.extra_data.frame_type.clone(),
+                                    ..Default::default()
+                                }
+                               
                             },
                         );
                         *broadcasted_frames.lock().unwrap() = local_broadcasted_frames_clone;
@@ -418,13 +434,6 @@ async fn teach_frame(
                             "Frame '{}' was taught a new pose.",
                             message.child_frame_id
                         ))
-                        // },
-                        // Some(false) => {
-                        //     main_error_response(&format!(
-                        //         "Frame '{}' can't be taught since it is published elsewhere.",
-                        //         message.child_frame_id
-                        //     ))
-                        // }
                     }
                     None => main_error_response(&format!(
                         "Frame '{}' can't be taught since it is published elsewhere.",
@@ -483,11 +492,7 @@ async fn reparent_frame(
                 parent_frame_id: message.parent_frame_id.to_string(),
                 child_frame_id: message.child_frame_id.to_string(),
                 transform: message.transform.clone(),
-                time_stamp: None,
-                zone: None,
-                next: None,
-                frame_type: None,
-                active: None,
+                ..Default::default()
             },
             &local_buffered_frames,
         ) {
@@ -508,12 +513,15 @@ async fn reparent_frame(
                                     parent_frame_id: message.parent_frame_id.clone(),
                                     child_frame_id: message.child_frame_id.clone(),
                                     transform,
-                                    active: Some(true),
-                                    time_stamp: Some(time_stamp),
-                                    zone: frame.zone.clone(),
-                                    next: frame.next.clone(),
-                                    frame_type: frame.frame_type.clone(),
-                                    // local: Some(true)
+                                    extra_data: ExtraData {
+                                        active: Some(true),
+                                        time_stamp: Some(time_stamp),
+                                        zone: frame.extra_data.zone.clone(),
+                                        next: frame.extra_data.next.clone(),
+                                        frame_type: frame.extra_data.frame_type.clone(),
+                                        ..Default::default()
+                                    }
+                                  
                                 },
                             );
                             *broadcasted_frames.lock().unwrap() = local_broadcasted_frames_clone;
@@ -582,20 +590,14 @@ async fn clone_frame(
             parent_frame_id: message.parent_frame_id.clone(),
             child_frame_id: message.new_frame_id.clone(),
             transform: message.transform.clone(),
-            active: Some(true),
-            time_stamp: Some(time_stamp.clone()),
-            zone: None,
-            next: None,
-            frame_type: None,
+            extra_data: ExtraData {
+                active: Some(true),
+                time_stamp: Some(time_stamp.clone()),
+                ..Default::default()
+            }
+            
         };
 
-        // let new_message = ManipulateScene::Request {
-        //     command: "clone".to_string(),
-        //     child_frame_id: message.new_frame_id.to_string(),
-        //     parent_frame_id: message.parent_frame_id.to_string(),
-        //     new_frame_id: message.new_frame_id.to_string(),
-        //     transform: message.transform.clone(),
-        // };
         match check_would_produce_cycle(&frame_to_clone, &local_buffered_frames) {
             (false, _) => match lookup_transform(
                 &message.parent_frame_id,
@@ -614,12 +616,15 @@ async fn clone_frame(
                                     parent_frame_id: message.parent_frame_id.clone(),
                                     child_frame_id: message.new_frame_id.clone(),
                                     transform,
-                                    active: Some(true),
-                                    time_stamp: Some(time_stamp),
-                                    zone: frame.zone.clone(),
-                                    next: frame.next.clone(),
-                                    frame_type: frame.frame_type.clone(),
-                                    // local: Some(true)
+                                    extra_data: ExtraData {
+                                        active: Some(true),
+                                        time_stamp: Some(time_stamp),
+                                        zone: frame.extra_data.zone.clone(),
+                                        next: frame.extra_data.next.clone(),
+                                        frame_type: frame.extra_data.frame_type.clone(),
+                                        ..Default::default()
+                                    }
+                                  
                                 },
                             );
                             *broadcasted_frames.lock().unwrap() = local_broadcasted_frames_clone;

@@ -1,10 +1,11 @@
 use r2r::geometry_msgs::msg::{Quaternion, Transform, Vector3};
-use r2r::scene_manipulation_msgs::srv::ExtraFeatures;
+use r2r::scene_manipulation_msgs::srv::ManipulateExtras;
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::BufReader;
 use std::sync::{Arc, Mutex};
 
+use crate::ExtraData;
 use crate::common::{errors::ErrorMsg, frame_data::FrameData};
 
 use super::errors::{extra_error_response, extra_success_response};
@@ -48,7 +49,7 @@ pub fn load_scenario(scenario: &Vec<String>, node_id: &str) -> HashMap<String, F
         FrameData {
             parent_frame_id: "world_origin".to_string(),
             child_frame_id: "world".to_string(),
-            active: Some(false),
+            
             transform: Transform {
                 rotation: Quaternion {
                     x: 0.0,
@@ -60,7 +61,10 @@ pub fn load_scenario(scenario: &Vec<String>, node_id: &str) -> HashMap<String, F
                     ..Default::default()
                 },
             },
-            ..Default::default()
+            extra_data: ExtraData {
+                active: Some(false),
+                ..Default::default()
+            }
         },
     );
 
@@ -82,10 +86,10 @@ pub fn load_scenario(scenario: &Vec<String>, node_id: &str) -> HashMap<String, F
 }
 
 pub async fn reload_scenario(
-    message: &r2r::scene_manipulation_msgs::srv::ExtraFeatures::Request,
+    message: &r2r::scene_manipulation_msgs::srv::ManipulateExtras::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     node_id: &str,
-) -> ExtraFeatures::Response {
+) -> ManipulateExtras::Response {
     match list_frames_in_dir(&message.scenario_path, node_id).await {
         Ok(scenario) => {
             let loaded = load_scenario(&scenario, node_id);

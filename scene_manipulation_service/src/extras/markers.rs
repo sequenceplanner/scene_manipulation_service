@@ -1,3 +1,5 @@
+// TODO: all of this should be moved to the visualization server
+
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},

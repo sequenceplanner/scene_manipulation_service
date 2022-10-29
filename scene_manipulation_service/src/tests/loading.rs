@@ -23,7 +23,8 @@ fn make_frame(name: &str, x: f64, y: f64, z: f64) -> String {
                 "z": 0.0,
                 "w": 1.0
             }
-        }
+        },
+        "extra_data": {}
     })
     .to_string()
 }
@@ -136,7 +137,7 @@ async fn test_load_scenario() {
                     w: 1.0,
                 },
             },
-            active: Some(true),
+            // active: Some(true),
             ..Default::default()
         }
     );
@@ -159,7 +160,7 @@ async fn test_load_scenario() {
                     w: 1.0,
                 },
             },
-            active: Some(true),
+            // active: Some(true),
             ..Default::default()
         }
     );
@@ -182,7 +183,7 @@ async fn test_load_scenario() {
                     w: 1.0,
                 },
             },
-            active: Some(true),
+            // active: Some(true),
             ..Default::default()
         }
     );
