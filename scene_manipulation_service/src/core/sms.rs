@@ -1,7 +1,7 @@
 use futures::{stream::Stream, StreamExt};
 use r2r::scene_manipulation_msgs::srv::ManipulateScene;
 use r2r::ServiceRequest;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -10,7 +10,6 @@ use crate::common::frame_data::FrameData;
 use crate::{check_would_produce_cycle, lookup_transform, ExtraData};
 
 // A BIG TODO: disable reparenting and cloning if the parent and child is the same, breaks the tree
-// TODO: add a loop check before adding frames
 // TODO: sort out information in the messages when responding
 // TODO: persist changes!
 pub async fn scene_manipulation_server(
@@ -118,7 +117,7 @@ pub async fn add_frame(
                 extra_data: extras
             };
         
-            match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" {
+            match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" || &message.child_frame_id == "teaching_marker" {
                 false => match local_buffered_frames.contains_key(&message.child_frame_id) {
                     false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                         false => match local_buffered_frames.contains_key(&message.parent_frame_id) {
@@ -169,9 +168,7 @@ pub async fn add_frame(
     }
 }
 
-// TODO: maybe remove the frame also from the buffered_frames
-// TODO: a frame needs a name, can't be blank ""
-async fn remove_frame(
+pub async fn remove_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -209,13 +206,16 @@ async fn remove_frame(
                         message.child_frame_id
                     )),
                 },
-                Some(false) => main_error_response("Can't manipulate_static frames."),
+                Some(false) => main_error_response(&format!(
+                    "Can't remove static frame '{}'.",
+                    message.child_frame_id
+                ))
             },
             None => main_error_response("Failed to get frame data from broadcaster hashmap."),
         }
     }
 
-    match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" {
+    match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" || &message.child_frame_id == "teaching_marker" {
         false => match local_buffered_frames.contains_key(&message.child_frame_id) {
             false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => main_error_response("Frame doesn't exist in tf, nor is it published by this broadcaster."),
@@ -232,26 +232,23 @@ async fn remove_frame(
                 true => inner(message, broadcasted_frames, buffered_frames)
             }
         },
-        true => main_error_response("Frame 'world' is reserved as the universal tree root."),
+        true => main_error_response(&format!("Frame '{}' is reserved as the universal tree root.", &message.child_frame_id)),
     }
 }
 
-async fn rename_frame(
+pub async fn rename_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
 ) -> ManipulateScene::Response {
     let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
+    let mut remove_request = message.clone();
+    let mut add_request = message.clone();
+    remove_request.command = "remove".to_string();
+    add_request.command = "add".to_string();
 
     let remove_response = remove_frame(
-        &ManipulateScene::Request {
-            command: "remove".to_string(),
-            child_frame_id: message.child_frame_id.to_string(),
-            parent_frame_id: message.parent_frame_id.to_string(),
-            new_frame_id: message.new_frame_id.to_string(),
-            transform: message.transform.clone(),
-            ..Default::default()
-        },
+        &remove_request,
         &broadcasted_frames,
         &buffered_frames,
     )
@@ -271,7 +268,18 @@ async fn rename_frame(
                         parent_frame_id: frame.parent_frame_id.to_string(),
                         new_frame_id: message.new_frame_id.to_string(),
                         transform: frame.transform.clone(),
-                        ..Default::default()
+                        extra: json!({
+                            "time_stamp": frame.extra_data.time_stamp,
+                            "zone": frame.extra_data.zone,
+                            "next": frame.extra_data.next,
+                            "frame_type": frame.extra_data.frame_type,
+                            "active": frame.extra_data.active,
+                            "show_mesh": frame.extra_data.show_mesh,
+                            "mesh_type": frame.extra_data.mesh_type,
+                            "mesh_path": frame.extra_data.mesh_path,
+                            "mesh_scale": frame.extra_data.mesh_scale,
+                            "mesh_color": frame.extra_data.mesh_color
+                        }).to_string()
                     },
                     &broadcasted_frames,
                     &buffered_frames,
@@ -291,8 +299,7 @@ async fn rename_frame(
     }
 }
 
-// see if it is local
-async fn move_frame(
+pub async fn move_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -305,7 +312,7 @@ async fn move_frame(
     let now = clock.get_now().unwrap();
     let time_stamp = r2r::Clock::to_builtin_time(&now);
 
-    match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" {
+    match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" { // || &message.child_frame_id == "teaching_marker" {
         false => match local_buffered_frames.contains_key(&message.child_frame_id) {
             false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => main_error_response("Frame doesn't exist."),
@@ -381,7 +388,8 @@ async fn move_frame(
     }
 }
 
-async fn teach_frame(
+// move the frame named with child_frame_id to the current position of the teaching_marker
+pub async fn teach_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -411,8 +419,6 @@ async fn teach_frame(
             Some(transform) => {
                 match local_broadcasted_frames.get(&message.child_frame_id.clone()) {
                     Some(frame) => {
-                        //match frame.local {
-                        // Some(true) | None => {
                         local_broadcasted_frames_clone.insert(
                             message.child_frame_id.clone(),
                             FrameData {
@@ -446,7 +452,7 @@ async fn teach_frame(
         }
     }
 
-    match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" {
+    match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" || &message.child_frame_id == "teaching_marker" {
         false => match local_buffered_frames.contains_key(&message.child_frame_id) {
             false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => main_error_response("Frame doesn't exist."),
@@ -467,7 +473,7 @@ async fn teach_frame(
     }
 }
 
-async fn reparent_frame(
+pub async fn reparent_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -545,7 +551,7 @@ async fn reparent_frame(
         }
     }
 
-    match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" {
+    match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" || &message.child_frame_id == "teaching_marker" {
         false => match local_buffered_frames.contains_key(&message.child_frame_id) {
             false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => main_error_response("Frame doesn't exist."),
