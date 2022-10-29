@@ -109,7 +109,8 @@ pub async fn add_frame(
     let time_stamp = r2r::Clock::to_builtin_time(&now);
 
     match serde_json::from_str(&message.extra) {
-        Ok::<ExtraData, _>(extras) => {
+        Ok::<ExtraData, _>(mut extras) => {
+            extras.time_stamp = Some(time_stamp);
             let frame_to_add = FrameData {
                 parent_frame_id: message.parent_frame_id.clone(),
                 child_frame_id: message.child_frame_id.clone(),
@@ -141,9 +142,9 @@ pub async fn add_frame(
                                             message.child_frame_id
                                         ))
                                     }
-                                    (true, cause) => main_error_response(&format!(
-                                        "Adding frame '{}' would produce a cycle. Not added: '{}'",
-                                        &message.child_frame_id, cause
+                                    (true, _) => main_error_response(&format!(
+                                        "Adding frame '{}' would produce a cycle.",
+                                        &message.child_frame_id,
                                     )),
                                 }
                             }
@@ -152,11 +153,11 @@ pub async fn add_frame(
                             tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
                             match local_buffered_frames.contains_key(&message.child_frame_id) {
                                 false => main_error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
-                                true => main_error_response("Frame already exists."),
+                                true => main_error_response("Frame already exists in the tf."),
                             }
                         }
                     },
-                    true => main_error_response("Frame already exists."),
+                    true => main_error_response("Frame already exists in the tf, will not proceed to broadcasted locally."),
                 },
                 true => main_error_response(&format!("Frame '{}' is reserved as the universal tree root.", &message.child_frame_id)),
             }
