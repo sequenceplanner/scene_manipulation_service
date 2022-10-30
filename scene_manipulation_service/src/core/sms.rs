@@ -95,6 +95,7 @@ pub async fn scene_manipulation_server(
     }
 }
 
+// Add a new frame
 pub async fn add_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -168,6 +169,7 @@ pub async fn add_frame(
     }
 }
 
+// Remove the frame from the scene
 pub async fn remove_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -236,6 +238,7 @@ pub async fn remove_frame(
     }
 }
 
+// Rename the child frame to the new frame id
 pub async fn rename_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -299,20 +302,57 @@ pub async fn rename_frame(
     }
 }
 
+// Move the child marker to the position of the currently selected parent frame
+// TODO: Have to lookup the parent frame in the world first!
+// TODO: This is the same as the teach frame, just inverted, so have both in one
 pub async fn move_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
 ) -> ManipulateScene::Response {
     let local_buffered_frames = buffered_frames.lock().unwrap().clone();
-    let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
-    let local_broadcasted_frames_clone = broadcasted_frames.lock().unwrap().clone();
+    let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
 
-    let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
-    let now = clock.get_now().unwrap();
-    let time_stamp = r2r::Clock::to_builtin_time(&now);
+    async fn inner(
+        message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
+        broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+        buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+    ) -> ManipulateScene::Response {
+        let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
+        let local_broadcasted_frames_clone = local_broadcasted_frames.clone();
+        let local_buffered_frames = buffered_frames.lock().unwrap().clone();
 
-    match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" { // || &message.child_frame_id == "teaching_marker" {
+        match local_buffered_frames.get(&message.parent_frame_id.clone()) {
+            Some(parent) => 
+                match local_broadcasted_frames_clone.get(&message.child_frame_id.clone()) {
+                    Some(child) => match child.extra_data.active {
+                        Some(true) | None => {                       
+                        local_broadcasted_frames.insert(
+                            child.child_frame_id.clone(),
+                            FrameData {
+                                parent_frame_id: child.parent_frame_id.clone(),
+                                child_frame_id: child.child_frame_id.clone(),
+                                transform: parent.transform.clone(),
+                                extra_data: child.extra_data.clone() 
+                            }
+                        );
+                        *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
+                        main_success_response(&format!(
+                            "Frame '{}' moved to '{}'.",
+                            message.child_frame_id, message.parent_frame_id 
+                        ))}
+                        Some(false) => main_error_response("Can't manipulate static frames.") 
+                    },
+                    None => main_error_response(&format!("Can't move the frame '{}' to the position of the '{}' frame, '{}' is not published locally.", 
+                    &message.child_frame_id, &message.parent_frame_id, &message.child_frame_id)),
+                },
+            None => main_error_response(&format!("Can't move the frame '{}' to the position of the '{}' frame, '{}' doens't exist in tf.", 
+            &message.child_frame_id, &message.parent_frame_id, &message.parent_frame_id)),
+        }
+        
+    }
+
+    match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" || &message.child_frame_id == "teaching_marker" {
         false => match local_buffered_frames.contains_key(&message.child_frame_id) {
             false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => main_error_response("Frame doesn't exist."),
@@ -320,75 +360,21 @@ pub async fn move_frame(
                     tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
                     match local_buffered_frames.contains_key(&message.child_frame_id) {
                         false => main_error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
-                        true => {
-                            match local_broadcasted_frames_clone.get(&message.child_frame_id.clone()) {
-                                Some(frame) => {
-                                    local_broadcasted_frames.insert(
-                                        message.child_frame_id.clone(),
-                                        FrameData {
-                                            parent_frame_id: message.parent_frame_id.clone(),
-                                            child_frame_id: message.child_frame_id.clone(),
-                                            transform: message.transform.clone(),
-                                            extra_data: ExtraData {
-                                                active: Some(true),
-                                                time_stamp: Some(time_stamp),
-                                                zone: frame.extra_data.zone.clone(),
-                                                next: frame.extra_data.next.clone(),
-                                                frame_type: frame.extra_data.frame_type.clone(),
-                                                ..Default::default()
-                                            }
-                                        }
-                                    );
-                                    *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
-                            main_success_response(&format!(
-                                "Frame '{}' added to the scene.",
-                                message.child_frame_id
-                            ))
-                                },
-                                None => main_error_response("Frame exists in the tf, but it can't be moved since it is not published by this broadcaster."),
-                            }
-                        }
+                        true => inner(&message, &broadcasted_frames, &buffered_frames).await
                     }
                 }
             }
             true => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => main_error_response("Frame exists in the tf, but it can't be moved since it is not published by this broadcaster."),
-                true => {
-                    match local_broadcasted_frames_clone.get(&message.child_frame_id.clone()) {
-                        Some(frame) => {
-                            local_broadcasted_frames.insert(
-                                message.child_frame_id.clone(),
-                                FrameData {
-                                    parent_frame_id: message.parent_frame_id.clone(),
-                                    child_frame_id: message.child_frame_id.clone(),
-                                    transform: message.transform.clone(),
-                                    extra_data: ExtraData {
-                                        active: Some(true),
-                                        time_stamp: Some(time_stamp),
-                                        zone: frame.extra_data.zone.clone(),
-                                        next: frame.extra_data.next.clone(),
-                                        frame_type: frame.extra_data.frame_type.clone(),
-                                        ..Default::default()
-                                    }
-                                    
-                                }
-                            );
-                            *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
-                    main_success_response(&format!(
-                        "Frame '{}' added to the scene.",
-                        message.child_frame_id
-                    ))
-                        },
-                        None => main_error_response("Frame exists in the tf, but it can't be moved since it is not published by this broadcaster."),
-                    }
-                }
+                true => inner(&message, &broadcasted_frames, &buffered_frames).await
             }
         },
-        true => main_error_response("Frame 'world' is reserved as the universal tree root."),
+        true => main_error_response(&format!("Frame '{}' is reserved as the universal tree root.", &message.child_frame_id))
     }
 }
 
 // move the frame named with child_frame_id to the current position of the teaching_marker
+// TODO: Have only this or move frame, they are the same...
 pub async fn teach_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -473,6 +459,7 @@ pub async fn teach_frame(
     }
 }
 
+// TODO: test
 pub async fn reparent_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -572,6 +559,7 @@ pub async fn reparent_frame(
     }
 }
 
+// TODO: test
 async fn clone_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,

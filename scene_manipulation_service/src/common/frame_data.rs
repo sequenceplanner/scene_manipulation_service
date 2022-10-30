@@ -4,7 +4,15 @@ use r2r::{builtin_interfaces::msg::Time, geometry_msgs::msg::Vector3};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-pub static MAX_TRANSFORM_CHAIN: u64 = 100;
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct LoadedFrameData {
+    // mandatory fields in the json files
+    pub parent_frame_id: String, // the id of the frame's parent frame
+    pub child_frame_id: String,  // the id of the frame
+    pub transform: Transform,    // where is the child frame defined in the parent
+    // optional fields in the json files. will be encoded to a json string before sent out
+    pub extra_data: Option<ExtraData>,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct FrameData {

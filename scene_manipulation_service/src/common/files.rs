@@ -6,7 +6,7 @@ use std::io::BufReader;
 use std::sync::{Arc, Mutex};
 
 use crate::ExtraData;
-use crate::common::{errors::ErrorMsg, frame_data::FrameData};
+use crate::common::{errors::ErrorMsg, frame_data::{FrameData, LoadedFrameData}};
 
 use super::errors::{extra_error_response, extra_success_response};
 
@@ -72,8 +72,16 @@ pub fn load_scenario(scenario: &Vec<String>, node_id: &str) -> HashMap<String, F
         Ok(file) => {
             let reader = BufReader::new(file);
             match serde_json::from_reader(reader) {
-                Ok::<FrameData, _>(json) => {
-                    frame_datas.insert(json.child_frame_id.clone(), json.clone());
+                Ok::<LoadedFrameData, _>(json) => {
+                    frame_datas.insert(json.child_frame_id.clone(), FrameData {
+                        parent_frame_id: json.clone().parent_frame_id,
+                        child_frame_id: json.clone().child_frame_id,
+                        transform: json.clone().transform,
+                        extra_data: match json.clone().extra_data {
+                            Some(extra_data) => extra_data,
+                            None => ExtraData::default()
+                        }
+                    } );
                 }
                 Err(e) => {
                     r2r::log_warn!(node_id, "Serde failed with: '{}'.", e);

@@ -1,6 +1,6 @@
 use r2r::scene_manipulation_msgs::msg::TFExtra;
 use r2r::scene_manipulation_msgs::srv::{
-    ManipulateExtras, GetAllTransforms, LookupTransform, ManipulateScene,
+    GetAllTransforms, LookupTransform, ManipulateExtras, ManipulateScene,
 };
 use r2r::tf2_msgs::msg::TFMessage;
 use r2r::{ParameterValue, QosProfile};
@@ -279,7 +279,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // this can remain here since it is connected to the GUI
     // offer a service for extra features, like the teaching marker, zones, paths, etc.
-    let extra_features_service = node.create_service::<ManipulateExtras::Service>("extra_features")?;
+    let extra_features_service =
+        node.create_service::<ManipulateExtras::Service>("extra_features")?;
     let broadcasted_frames_clone = broadcasted_frames.clone();
     tokio::task::spawn(async move {
         let result =
