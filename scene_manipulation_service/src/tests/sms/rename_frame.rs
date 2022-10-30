@@ -111,7 +111,7 @@ async fn test_rename_frame() {
         extra: json!({}).to_string(),
         ..Default::default()
     };
-    let response = rename_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = rename_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {

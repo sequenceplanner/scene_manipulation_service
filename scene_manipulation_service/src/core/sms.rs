@@ -3,7 +3,9 @@ use r2r::scene_manipulation_msgs::srv::ManipulateScene;
 use r2r::ServiceRequest;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
+use std::io::Write;
 use std::sync::{Arc, Mutex};
+use std::fs;
 
 use crate::common::errors::{main_error_response, main_success_response};
 use crate::common::frame_data::FrameData;
@@ -16,6 +18,7 @@ pub async fn scene_manipulation_server(
     mut service: impl Stream<Item = ServiceRequest<ManipulateScene::Service>> + Unpin,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+    persist_path: &str,
     node_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
@@ -24,7 +27,7 @@ pub async fn scene_manipulation_server(
                 "add" => {
                     r2r::log_info!(node_id, "Got 'add' request: {:?}.", request.message);
                     let response =
-                        add_frame(&request.message, &broadcasted_frames, &buffered_frames).await;
+                        add_frame(&request.message, &broadcasted_frames, &buffered_frames, &persist_path).await;
                     request
                         .respond(response)
                         .expect("Could not send service response.");
@@ -33,7 +36,7 @@ pub async fn scene_manipulation_server(
                 "remove" => {
                     r2r::log_info!(node_id, "Got 'remove' request: {:?}.", request.message);
                     let response =
-                        remove_frame(&request.message, &broadcasted_frames, &buffered_frames).await;
+                        remove_frame(&request.message, &broadcasted_frames, &buffered_frames, &persist_path).await;
                     request
                         .respond(response)
                         .expect("Could not send service response.");
@@ -42,7 +45,7 @@ pub async fn scene_manipulation_server(
                 "rename" => {
                     r2r::log_info!(node_id, "Got 'rename' request: {:?}.", request.message);
                     let response =
-                        rename_frame(&request.message, &broadcasted_frames, &buffered_frames).await;
+                        rename_frame(&request.message, &broadcasted_frames, &buffered_frames, &persist_path).await;
                     request
                         .respond(response)
                         .expect("Could not send service response.");
@@ -51,7 +54,7 @@ pub async fn scene_manipulation_server(
                 "move" => {
                     r2r::log_info!(node_id, "Got 'move' request: {:?}.", request.message);
                     let response =
-                        move_frame(&request.message, &broadcasted_frames, &buffered_frames).await;
+                        move_frame(&request.message, &broadcasted_frames, &buffered_frames, &persist_path).await;
                     request
                         .respond(response)
                         .expect("Could not send service response.");
@@ -60,7 +63,7 @@ pub async fn scene_manipulation_server(
                 "reparent" => {
                     r2r::log_info!(node_id, "Got 'reparent' request: {:?}.", request.message);
                     let response =
-                        reparent_frame(&request.message, &broadcasted_frames, &buffered_frames)
+                        reparent_frame(&request.message, &broadcasted_frames, &buffered_frames, &persist_path)
                             .await;
                     request
                         .respond(response)
@@ -70,7 +73,7 @@ pub async fn scene_manipulation_server(
                 "clone" => {
                     r2r::log_info!(node_id, "Got 'clone' request: {:?}.", request.message);
                     let response =
-                        clone_frame(&request.message, &broadcasted_frames, &buffered_frames).await;
+                        clone_frame(&request.message, &broadcasted_frames, &buffered_frames, &persist_path).await;
                     request
                         .respond(response)
                         .expect("Could not send service response.");
@@ -79,7 +82,7 @@ pub async fn scene_manipulation_server(
                 "teach" => {
                     r2r::log_info!(node_id, "Got 'teach' request: {:?}.", request.message);
                     let response =
-                        teach_frame(&request.message, &broadcasted_frames, &buffered_frames).await;
+                        teach_frame(&request.message, &broadcasted_frames, &buffered_frames, &persist_path).await;
                     request
                         .respond(response)
                         .expect("Could not send service response.");
@@ -100,6 +103,7 @@ pub async fn add_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+    persist_path: &str,
 ) -> ManipulateScene::Response {
     let local_buffered_frames = buffered_frames.lock().unwrap().clone();
     let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
@@ -124,12 +128,53 @@ pub async fn add_frame(
                         false => match local_buffered_frames.contains_key(&message.parent_frame_id) {
                             false => {
                                 local_broadcasted_frames
-                                    .insert(message.child_frame_id.clone(), frame_to_add);
+                                    .insert(message.child_frame_id.clone(), frame_to_add.clone());
                                 *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
-                                main_success_response(&format!(
-                                    "Frame '{}' added to the scene.",
-                                    message.child_frame_id
-                                ))
+                                match &message.persist {
+                                    false => main_success_response(&format!(
+                                        "Frame '{}' temporairly added to the scene.",
+                                        message.child_frame_id
+                                    )),
+                                    true => {
+                                        match fs::write(
+                                            &format!("{}/{}.json", persist_path, message.child_frame_id),
+                                            serde_json::to_string_pretty(&frame_to_add.clone()).unwrap(),
+                                        ) {
+                                            Ok(()) =>  main_success_response(&format!(
+                                                "Frame '{}' permanently added to the scene.",
+                                                message.child_frame_id
+                                            )),
+                                            Err(_) => main_success_response(&format!(
+                                                        "Frame '{}' temporairly added to the scene, but adding the json file failed. Investigate?",
+                                                        message.child_frame_id
+                                                    )),
+                                        }
+                                        // f.flush();
+                                        // main_success_response(&format!(
+                                        //     "Frame '{}' permanently added to the scene.",
+                                        //     message.child_frame_id
+                                        // ))
+                                        // match fs::OpenOptions::new().write(true).truncate(true).open(&format!("{}/{}.json", persist_path, message.child_frame_id)) {
+                                        //     Ok(mut f) => {
+                                        //         fs::write(
+                                        //             &format!("{}/{}.json", persist_path, message.child_frame_id),
+                                        //             serde_json::to_string_pretty(&frame_to_add.clone()).unwrap(),
+                                        //         );
+                                        //         f.flush();
+                                        //         main_success_response(&format!(
+                                        //             "Frame '{}' permanently added to the scene.",
+                                        //             message.child_frame_id
+                                        //         ))
+                                        //     },
+                                        //     Err(_) => main_success_response(&format!(
+                                        //         "Frame '{}' temporairly added to the scene, but adding the json file failed. Investigate?",
+                                        //         message.child_frame_id
+                                        //     )),
+                                        // }
+                                        
+                                    }
+                                }
+                                
                             }
                             true => {
                                 match check_would_produce_cycle(&frame_to_add, &local_buffered_frames) {
@@ -174,6 +219,7 @@ pub async fn remove_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+    persist_path: &str,
 ) -> ManipulateScene::Response {
     let local_buffered_frames = buffered_frames.lock().unwrap().clone();
     let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
@@ -243,6 +289,7 @@ pub async fn rename_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+    persist_path: &str,
 ) -> ManipulateScene::Response {
     let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
     let mut remove_request = message.clone();
@@ -254,6 +301,7 @@ pub async fn rename_frame(
         &remove_request,
         &broadcasted_frames,
         &buffered_frames,
+        &persist_path,
     )
     .await;
 
@@ -271,6 +319,7 @@ pub async fn rename_frame(
                         parent_frame_id: frame.parent_frame_id.to_string(),
                         new_frame_id: message.new_frame_id.to_string(),
                         transform: frame.transform.clone(),
+                        persist: message.persist,
                         extra: json!({
                             "time_stamp": frame.extra_data.time_stamp,
                             "zone": frame.extra_data.zone,
@@ -286,6 +335,7 @@ pub async fn rename_frame(
                     },
                     &broadcasted_frames,
                     &buffered_frames,
+                    &persist_path,
                 )
                 .await;
                 match add_response.success {
@@ -309,6 +359,7 @@ pub async fn move_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+    persist_path: &str,
 ) -> ManipulateScene::Response {
     let local_buffered_frames = buffered_frames.lock().unwrap().clone();
     let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
@@ -379,6 +430,7 @@ pub async fn teach_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+    persist_path: &str,
 ) -> ManipulateScene::Response {
     let local_buffered_frames = buffered_frames.lock().unwrap().clone();
     let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
@@ -464,6 +516,7 @@ pub async fn reparent_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+    persist_path: &str,
 ) -> ManipulateScene::Response {
     let local_buffered_frames = buffered_frames.lock().unwrap().clone();
     let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
@@ -564,6 +617,7 @@ async fn clone_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+    persist_path: &str,
 ) -> ManipulateScene::Response {
     let local_buffered_frames = buffered_frames.lock().unwrap().clone();
     let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();

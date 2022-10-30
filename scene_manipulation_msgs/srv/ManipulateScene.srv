@@ -15,11 +15,10 @@ string new_frame_id
 # child_frame_id expressed in parent_frame_id
 geometry_msgs/Transform transform
 
-# Whether to manipulate the json file
-# No persist for now, if you want to persist the change, edit the json file manually
-# bool persist
+# Whether to manipulate the json file and thus persist the changes (default is false)
+bool persist false
 
-# This map can contain additional data like mesh location, zone, etc.
+# This json map can contain additional data like mesh location, zone, etc.
 string extra
 
 ---

@@ -219,6 +219,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             scene_manipulation_service,
             &broadcasted_frames_clone,
             &buffered_frames_clone,
+            &path_param,
             NODE_ID,
         )
         .await;

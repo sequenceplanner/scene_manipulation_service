@@ -131,12 +131,68 @@ async fn test_add_frame() {
         extra: json!({}).to_string(),
         ..Default::default()
     };
-    let response = add_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = add_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
             success: true,
             info: "Frame 'dummy_5' added to the scene.".to_string()
+        }
+    );
+    let broadcasted_local = broadcasted_frames.lock().unwrap().clone();
+    let buffered_local = buffered_frames.lock().unwrap();
+
+    assert!(broadcasted_local.contains_key("dummy_5"));
+    assert!(!buffered_local.contains_key("dummy_5"));
+}
+
+#[tokio::test]
+async fn test_add_frame_and_persist() {
+    let initial_frames = make_initial_setup();
+    let mut tf_frames = initial_frames.clone();
+    tf_frames.insert(
+        "dummy_4".to_string(),
+        FrameData {
+            parent_frame_id: "world".to_string(),
+            child_frame_id: "dummy_4".to_string(),
+            transform: r2r::geometry_msgs::msg::Transform {
+                translation: r2r::geometry_msgs::msg::Vector3 {
+                    x: 1.0,
+                    y: 1.0,
+                    z: 1.0,
+                },
+                rotation: r2r::geometry_msgs::msg::Quaternion {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                    w: 1.0,
+                },
+            },
+            extra_data: ExtraData {
+                active: Some(true),
+                ..Default::default()
+            },
+        },
+    );
+    let broadcasted_frames = Arc::new(Mutex::new(initial_frames));
+    let buffered_frames = Arc::new(Mutex::new(tf_frames));
+
+    let message = ManipulateScene::Request {
+        command: "add".to_string(),
+        child_frame_id: "dummy_5".to_string(),
+        parent_frame_id: "world".to_string(),
+        extra: json!({
+            "zone": 1234.1234
+        }).to_string(),
+        persist: true,
+        ..Default::default()
+    };
+    let response = add_frame(&message, &broadcasted_frames, &buffered_frames, "/home/endre/Desktop").await;
+    assert_eq!(
+        response,
+        ManipulateScene::Response {
+            success: true,
+            info: "Frame 'dummy_5' permanently added to the scene.".to_string()
         }
     );
     let broadcasted_local = broadcasted_frames.lock().unwrap().clone();
@@ -162,7 +218,7 @@ async fn test_add_frame_world() {
         ..Default::default()
     };
 
-    let response = add_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = add_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -186,7 +242,7 @@ async fn test_add_frame_world() {
         ..Default::default()
     };
 
-    let response = add_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = add_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -242,7 +298,7 @@ async fn test_add_frame_already_in_buffer() {
         ..Default::default()
     };
 
-    let response = add_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = add_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -301,7 +357,7 @@ async fn test_add_frame_already_in_broadcaster() {
         ..Default::default()
     };
 
-    let response = add_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = add_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -347,7 +403,7 @@ async fn test_add_frame_already_in_broadcaster() {
     let broadcasted_frames = Arc::new(Mutex::new(initial_frames));
     let buffered_frames = Arc::new(Mutex::new(tf_frames.clone()));
 
-    let response = add_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = add_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -390,7 +446,7 @@ async fn test_add_frame_with_extras() {
         ..Default::default()
     };
 
-    let response = add_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = add_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -454,7 +510,7 @@ async fn test_add_frame_would_produce_cycle() {
         ..Default::default()
     };
 
-    let response = add_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = add_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {

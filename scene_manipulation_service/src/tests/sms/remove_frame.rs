@@ -108,7 +108,7 @@ async fn test_remove_frame() {
         extra: json!({}).to_string(),
         ..Default::default()
     };
-    let response = remove_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = remove_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -139,7 +139,7 @@ async fn test_remove_frame_world() {
         ..Default::default()
     };
 
-    let response = remove_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = remove_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -156,7 +156,7 @@ async fn test_remove_frame_world() {
         ..Default::default()
     };
 
-    let response = remove_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = remove_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -182,7 +182,7 @@ async fn test_remove_frame_doesnt_exist() {
         extra: json!({}).to_string(),
         ..Default::default()
     };
-    let response = remove_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = remove_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -221,7 +221,7 @@ async fn test_remove_frame_exists_only_in_broadcaster() {
         extra: json!({}).to_string(),
         ..Default::default()
     };
-    let response = remove_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = remove_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -260,7 +260,7 @@ async fn test_remove_frame_exists_only_in_buffer() {
         extra: json!({}).to_string(),
         ..Default::default()
     };
-    let response = remove_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = remove_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -316,7 +316,7 @@ async fn test_remove_static_frame() {
         extra: json!({}).to_string(),
         ..Default::default()
     };
-    let response = remove_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = remove_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {

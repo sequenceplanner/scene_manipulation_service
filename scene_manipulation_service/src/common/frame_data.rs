@@ -73,6 +73,7 @@ impl Default for FrameData {
                     w: 1.0,
                 },
             },
+            // json_path: "".to_string(),
             extra_data: ExtraData::default(),
         }
     }

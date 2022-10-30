@@ -112,7 +112,7 @@ async fn test_move_frame() {
         ..Default::default()
     };
 
-    let response = move_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = move_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -160,7 +160,7 @@ async fn test_move_frame_static() {
         ..Default::default()
     };
 
-    let response = move_frame(&message, &broadcasted_frames, &buffered_frames).await;
+    let response = move_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
     assert_eq!(
         response,
         ManipulateScene::Response {
