@@ -6,12 +6,13 @@ use r2r::scene_manipulation_msgs::srv::ManipulateScene;
 use r2r::ServiceRequest;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
+use std::env;
 use std::sync::{Arc, Mutex};
 
 use scene_manipulation_service::common::errors::{main_error_response, main_success_response};
 use scene_manipulation_service::common::frame_data::FrameData;
 use scene_manipulation_service::core::sms::remove_frame;
-use scene_manipulation_service::ExtraData;
+use scene_manipulation_service::{ExtraData, add_frame};
 
 fn make_initial_setup() -> HashMap<String, FrameData> {
     let mut test_setup = HashMap::<String, FrameData>::new();
@@ -113,7 +114,7 @@ async fn test_remove_frame() {
         response,
         ManipulateScene::Response {
             success: true,
-            info: "Frame 'dummy_3' removed from the scene.".to_string()
+            info: "Frame 'dummy_3' temporarily removed from the scene.".to_string()
         }
     );
     let broadcasted_local = broadcasted_frames.lock().unwrap().clone();
@@ -121,6 +122,113 @@ async fn test_remove_frame() {
 
     assert!(!broadcasted_local.contains_key("dummy_3"));
     assert!(!buffered_local.contains_key("dummy_3"));
+}
+
+#[tokio::test]
+async fn test_remove_frame_and_persist() {
+    let mut initial_frames = make_initial_setup();
+    let mut tf_frames = initial_frames.clone();
+    
+    let broadcasted_frames = Arc::new(Mutex::new(initial_frames.clone()));
+    let buffered_frames = Arc::new(Mutex::new(tf_frames.clone()));
+
+    let message = ManipulateScene::Request {
+        command: "add".to_string(),
+        child_frame_id: "dummy_5".to_string(),
+        parent_frame_id: "world".to_string(),
+        extra: json!({
+            "zone": 1234.1234
+        }).to_string(),
+        persist: true,
+        ..Default::default()
+    };
+    let dir = env::temp_dir();
+    let response = add_frame(&message, &broadcasted_frames, &buffered_frames, dir.to_str().unwrap()).await;
+
+    initial_frames.insert(
+        "dummy_5".to_string(),
+        FrameData {
+            parent_frame_id: "world".to_string(),
+            child_frame_id: "dummy_5".to_string(),
+            transform: r2r::geometry_msgs::msg::Transform {
+                translation: r2r::geometry_msgs::msg::Vector3 {
+                    x: 1.0,
+                    y: 1.0,
+                    z: 1.0,
+                },
+                rotation: r2r::geometry_msgs::msg::Quaternion {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                    w: 1.0,
+                },
+            },
+            extra_data: ExtraData {
+                active: Some(true),
+                ..Default::default()
+            },
+        },
+    );
+
+    tf_frames.insert(
+        "dummy_5".to_string(),
+        FrameData {
+            parent_frame_id: "world".to_string(),
+            child_frame_id: "dummy_5".to_string(),
+            transform: r2r::geometry_msgs::msg::Transform {
+                translation: r2r::geometry_msgs::msg::Vector3 {
+                    x: 1.0,
+                    y: 1.0,
+                    z: 1.0,
+                },
+                rotation: r2r::geometry_msgs::msg::Quaternion {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                    w: 1.0,
+                },
+            },
+            extra_data: ExtraData {
+                active: Some(true),
+                ..Default::default()
+            },
+        },
+    );
+
+    let broadcasted_frames = Arc::new(Mutex::new(initial_frames));
+    let buffered_frames = Arc::new(Mutex::new(tf_frames.clone()));
+
+    if response.success {
+        let message = ManipulateScene::Request {
+            command: "remove".to_string(),
+            child_frame_id: "dummy_5".to_string(),
+            parent_frame_id: "world".to_string(),
+            extra: json!({
+                "zone": 1234.1234
+            }).to_string(),
+            persist: true,
+            ..Default::default()
+        };
+        let response = remove_frame(&message, &broadcasted_frames, &buffered_frames, dir.to_str().unwrap()).await;
+        assert_eq!(
+            response,
+            ManipulateScene::Response {
+                success: true,
+                info: "Frame 'dummy_5' permanently removed from the scene.".to_string()
+            }
+        );
+        let broadcasted_local = broadcasted_frames.lock().unwrap().clone();
+        let buffered_local = buffered_frames.lock().unwrap();
+    
+        assert!(!broadcasted_local.contains_key("dummy_5"));
+        assert!(!buffered_local.contains_key("dummy_5"));
+    } else {
+        println!("ASDFASDFASDFASDFASDF")
+    }
+
+    // tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+
+    
 }
 
 #[tokio::test]

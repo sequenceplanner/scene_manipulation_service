@@ -132,7 +132,7 @@ pub async fn add_frame(
                                 *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
                                 match &message.persist {
                                     false => main_success_response(&format!(
-                                        "Frame '{}' temporairly added to the scene.",
+                                        "Frame '{}' temporarily added to the scene.",
                                         message.child_frame_id
                                     )),
                                     true => {
@@ -149,32 +149,8 @@ pub async fn add_frame(
                                                         message.child_frame_id
                                                     )),
                                         }
-                                        // f.flush();
-                                        // main_success_response(&format!(
-                                        //     "Frame '{}' permanently added to the scene.",
-                                        //     message.child_frame_id
-                                        // ))
-                                        // match fs::OpenOptions::new().write(true).truncate(true).open(&format!("{}/{}.json", persist_path, message.child_frame_id)) {
-                                        //     Ok(mut f) => {
-                                        //         fs::write(
-                                        //             &format!("{}/{}.json", persist_path, message.child_frame_id),
-                                        //             serde_json::to_string_pretty(&frame_to_add.clone()).unwrap(),
-                                        //         );
-                                        //         f.flush();
-                                        //         main_success_response(&format!(
-                                        //             "Frame '{}' permanently added to the scene.",
-                                        //             message.child_frame_id
-                                        //         ))
-                                        //     },
-                                        //     Err(_) => main_success_response(&format!(
-                                        //         "Frame '{}' temporairly added to the scene, but adding the json file failed. Investigate?",
-                                        //         message.child_frame_id
-                                        //     )),
-                                        // }
-                                        
                                     }
                                 }
-                                
                             }
                             true => {
                                 match check_would_produce_cycle(&frame_to_add, &local_buffered_frames) {
@@ -228,6 +204,7 @@ pub async fn remove_frame(
         message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
         broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
         buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+        persist_path: &str,
     ) -> ManipulateScene::Response {
         let mut local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
         let mut local_buffered_frames = buffered_frames.lock().unwrap().clone();
@@ -239,10 +216,26 @@ pub async fn remove_frame(
                         Some(_) => {
                             *broadcasted_frames.lock().unwrap() = local_broadcasted_frames;
                             *buffered_frames.lock().unwrap() = local_buffered_frames;
-                            main_success_response(&format!(
-                                "Frame '{}' removed from the scene.",
-                                message.child_frame_id
-                            ))
+                            match &message.persist {
+                                false => main_success_response(&format!(
+                                    "Frame '{}' temporarily removed from the scene.",
+                                    message.child_frame_id
+                                )),
+                                true => {
+                                    match fs::remove_file(
+                                        &format!("{}/{}.json", persist_path, message.child_frame_id)
+                                    ) {
+                                        Ok(()) =>  main_success_response(&format!(
+                                            "Frame '{}' permanently removed from the scene.",
+                                            message.child_frame_id
+                                        )),
+                                        Err(_) => main_success_response(&format!(
+                                                    "Frame '{}' temporairly removed to the scene, but removing the json file failed. Investigate?",
+                                                    message.child_frame_id
+                                                )),
+                                    }
+                                }
+                            }
                         }
                         None => main_error_response(&format!(
                             "Failed to remove frame '{}' from the tf buffer.",
@@ -271,13 +264,13 @@ pub async fn remove_frame(
                     tokio::time::sleep(std::time::Duration::from_millis(2000)).await;
                     match local_buffered_frames.contains_key(&message.child_frame_id) {
                         false => main_error_response("Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."),
-                        true => inner(message, broadcasted_frames, buffered_frames)
+                        true => inner(message, broadcasted_frames, buffered_frames, persist_path)
                     }
                 }
             },
             true => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => main_error_response("Frame exists in the tf, but it can't be removed since it is not published by sms."),
-                true => inner(message, broadcasted_frames, buffered_frames)
+                true => inner(message, broadcasted_frames, buffered_frames, persist_path)
             }
         },
         true => main_error_response(&format!("Frame '{}' is reserved as the universal tree root.", &message.child_frame_id)),

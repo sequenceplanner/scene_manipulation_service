@@ -6,6 +6,7 @@ use r2r::scene_manipulation_msgs::srv::ManipulateScene;
 use r2r::ServiceRequest;
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
+use std::env;
 use std::sync::{Arc, Mutex};
 
 use scene_manipulation_service::common::errors::{main_error_response, main_success_response};
@@ -136,7 +137,7 @@ async fn test_add_frame() {
         response,
         ManipulateScene::Response {
             success: true,
-            info: "Frame 'dummy_5' added to the scene.".to_string()
+            info: "Frame 'dummy_5' temporarily added to the scene.".to_string()
         }
     );
     let broadcasted_local = broadcasted_frames.lock().unwrap().clone();
@@ -187,7 +188,8 @@ async fn test_add_frame_and_persist() {
         persist: true,
         ..Default::default()
     };
-    let response = add_frame(&message, &broadcasted_frames, &buffered_frames, "/home/endre/Desktop").await;
+    let dir = env::temp_dir();
+    let response = add_frame(&message, &broadcasted_frames, &buffered_frames, dir.to_str().unwrap()).await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -452,7 +454,7 @@ async fn test_add_frame_with_extras() {
         ManipulateScene::Response {
             success: true,
             info:
-                "Frame 'dummy_4' added to the scene."
+                "Frame 'dummy_4' temporarily added to the scene."
                     .to_string()
         }
     );
