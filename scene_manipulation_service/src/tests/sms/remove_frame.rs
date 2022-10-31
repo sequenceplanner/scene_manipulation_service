@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use scene_manipulation_service::common::errors::{main_error_response, main_success_response};
 use scene_manipulation_service::common::frame_data::FrameData;
 use scene_manipulation_service::core::sms::remove_frame;
-use scene_manipulation_service::{ExtraData, add_frame};
+use scene_manipulation_service::{add_frame, ExtraData};
 
 fn make_initial_setup() -> HashMap<String, FrameData> {
     let mut test_setup = HashMap::<String, FrameData>::new();
@@ -98,7 +98,7 @@ fn make_initial_setup() -> HashMap<String, FrameData> {
 async fn test_remove_frame() {
     let initial_frames = make_initial_setup();
     let tf_frames = initial_frames.clone();
-    
+
     let broadcasted_frames = Arc::new(Mutex::new(initial_frames));
     let buffered_frames = Arc::new(Mutex::new(tf_frames));
 
@@ -128,7 +128,7 @@ async fn test_remove_frame() {
 async fn test_remove_frame_and_persist() {
     let mut initial_frames = make_initial_setup();
     let mut tf_frames = initial_frames.clone();
-    
+
     let broadcasted_frames = Arc::new(Mutex::new(initial_frames.clone()));
     let buffered_frames = Arc::new(Mutex::new(tf_frames.clone()));
 
@@ -138,12 +138,19 @@ async fn test_remove_frame_and_persist() {
         parent_frame_id: "world".to_string(),
         extra: json!({
             "zone": 1234.1234
-        }).to_string(),
+        })
+        .to_string(),
         persist: true,
         ..Default::default()
     };
     let dir = env::temp_dir();
-    let response = add_frame(&message, &broadcasted_frames, &buffered_frames, dir.to_str().unwrap()).await;
+    let response = add_frame(
+        &message,
+        &broadcasted_frames,
+        &buffered_frames,
+        dir.to_str().unwrap(),
+    )
+    .await;
 
     initial_frames.insert(
         "dummy_5".to_string(),
@@ -205,11 +212,18 @@ async fn test_remove_frame_and_persist() {
             parent_frame_id: "world".to_string(),
             extra: json!({
                 "zone": 1234.1234
-            }).to_string(),
+            })
+            .to_string(),
             persist: true,
             ..Default::default()
         };
-        let response = remove_frame(&message, &broadcasted_frames, &buffered_frames, dir.to_str().unwrap()).await;
+        let response = remove_frame(
+            &message,
+            &broadcasted_frames,
+            &buffered_frames,
+            dir.to_str().unwrap(),
+        )
+        .await;
         assert_eq!(
             response,
             ManipulateScene::Response {
@@ -219,7 +233,7 @@ async fn test_remove_frame_and_persist() {
         );
         let broadcasted_local = broadcasted_frames.lock().unwrap().clone();
         let buffered_local = buffered_frames.lock().unwrap();
-    
+
         assert!(!broadcasted_local.contains_key("dummy_5"));
         assert!(!buffered_local.contains_key("dummy_5"));
     } else {
@@ -227,8 +241,6 @@ async fn test_remove_frame_and_persist() {
     }
 
     // tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-
-    
 }
 
 #[tokio::test]
@@ -274,12 +286,11 @@ async fn test_remove_frame_world() {
     );
 }
 
-
 #[tokio::test]
 async fn test_remove_frame_doesnt_exist() {
     let initial_frames = make_initial_setup();
     let tf_frames = initial_frames.clone();
-    
+
     let broadcasted_frames = Arc::new(Mutex::new(initial_frames));
     let buffered_frames = Arc::new(Mutex::new(tf_frames));
 
@@ -316,9 +327,9 @@ async fn test_remove_frame_exists_only_in_broadcaster() {
             parent_frame_id: "dummy_3".to_string(),
             child_frame_id: "dummy_4".to_string(),
             ..Default::default()
-        }
+        },
     );
-    
+
     let broadcasted_frames = Arc::new(Mutex::new(initial_frames));
     let buffered_frames = Arc::new(Mutex::new(tf_frames));
 
@@ -334,7 +345,9 @@ async fn test_remove_frame_exists_only_in_broadcaster() {
         response,
         ManipulateScene::Response {
             success: false,
-            info: "Frame doesn't exist in tf, but it is published by this broadcaster? Investigate.".to_string()
+            info:
+                "Frame doesn't exist in tf, but it is published by this broadcaster? Investigate."
+                    .to_string()
         }
     );
     let broadcasted_local = broadcasted_frames.lock().unwrap().clone();
@@ -355,9 +368,9 @@ async fn test_remove_frame_exists_only_in_buffer() {
             parent_frame_id: "dummy_3".to_string(),
             child_frame_id: "dummy_4".to_string(),
             ..Default::default()
-        }
+        },
     );
-    
+
     let broadcasted_frames = Arc::new(Mutex::new(initial_frames));
     let buffered_frames = Arc::new(Mutex::new(tf_frames));
 
@@ -373,7 +386,9 @@ async fn test_remove_frame_exists_only_in_buffer() {
         response,
         ManipulateScene::Response {
             success: false,
-            info: "Frame exists in the tf, but it can't be removed since it is not published by sms.".to_string()
+            info:
+                "Frame exists in the tf, but it can't be removed since it is not published by sms."
+                    .to_string()
         }
     );
     let broadcasted_local = broadcasted_frames.lock().unwrap().clone();
@@ -398,7 +413,7 @@ async fn test_remove_static_frame() {
                 ..Default::default()
             },
             ..Default::default()
-        }
+        },
     );
 
     initial_frames.insert(
@@ -411,9 +426,9 @@ async fn test_remove_static_frame() {
                 ..Default::default()
             },
             ..Default::default()
-        }
+        },
     );
-    
+
     let broadcasted_frames = Arc::new(Mutex::new(initial_frames));
     let buffered_frames = Arc::new(Mutex::new(tf_frames));
 

@@ -102,7 +102,7 @@ async fn test_rename_frame() {
     let broadcasted_frames = Arc::new(Mutex::new(initial_frames.clone()));
     let buffered_frames = Arc::new(Mutex::new(tf_frames));
     let dummy_3 = initial_frames.get("dummy_3").unwrap();
-    
+
     let message = ManipulateScene::Request {
         command: "rename".to_string(),
         child_frame_id: "dummy_3".to_string(),
@@ -112,6 +112,55 @@ async fn test_rename_frame() {
         ..Default::default()
     };
     let response = rename_frame(&message, &broadcasted_frames, &buffered_frames, "").await;
+    assert_eq!(
+        response,
+        ManipulateScene::Response {
+            success: true,
+            info: "Successfully renamed frame 'dummy_3' to 'new_name'.".to_string()
+        }
+    );
+
+    let broadcasted_local = broadcasted_frames.lock().unwrap().clone();
+    let buffered_local = buffered_frames.lock().unwrap();
+
+    let new_name = broadcasted_local.get("new_name").unwrap();
+
+    assert!(!broadcasted_local.contains_key("dummy_3"));
+    assert!(!buffered_local.contains_key("dummy_3"));
+
+    assert!(broadcasted_local.contains_key("new_name"));
+    assert_eq!(dummy_3.transform, new_name.transform);
+    assert_eq!(dummy_3.parent_frame_id, new_name.parent_frame_id);
+    assert_eq!(dummy_3.extra_data.zone, new_name.extra_data.zone);
+    assert_eq!(dummy_3.extra_data.next, new_name.extra_data.next);
+    assert_eq!(dummy_3.extra_data.active, new_name.extra_data.active);
+}
+
+#[tokio::test]
+async fn test_rename_frame_persist() {
+    let initial_frames = make_initial_setup();
+    let tf_frames = initial_frames.clone();
+
+    let broadcasted_frames = Arc::new(Mutex::new(initial_frames.clone()));
+    let buffered_frames = Arc::new(Mutex::new(tf_frames));
+    let dummy_3 = initial_frames.get("dummy_3").unwrap();
+
+    let message = ManipulateScene::Request {
+        command: "rename".to_string(),
+        child_frame_id: "dummy_3".to_string(),
+        parent_frame_id: "world".to_string(),
+        new_frame_id: "new_name".to_string(),
+        extra: json!({}).to_string(),
+        persist: true,
+        ..Default::default()
+    };
+    let response = rename_frame(
+        &message,
+        &broadcasted_frames,
+        &buffered_frames,
+        "/home/endre/Desktop",
+    )
+    .await;
     assert_eq!(
         response,
         ManipulateScene::Response {

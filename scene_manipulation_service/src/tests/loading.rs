@@ -2,7 +2,7 @@
 #![allow(dead_code)]
 use scene_manipulation_service::FrameData;
 use serde_json::json;
-use std::{io::Write, fs::File};
+use std::{fs::File, io::Write};
 
 use crate::{list_frames_in_dir, load_scenario};
 
@@ -56,8 +56,11 @@ async fn test_list_frames_in_dir() {
         File::create(pb.clone()).unwrap();
     });
 
-    let list =
-        list_frames_in_dir(&format!("{}", dir.path().as_os_str().to_str().unwrap()), "some_node").await;
+    let list = list_frames_in_dir(
+        &format!("{}", dir.path().as_os_str().to_str().unwrap()),
+        "some_node",
+    )
+    .await;
 
     assert_eq!(
         list.unwrap().sort(),
@@ -103,7 +106,12 @@ async fn test_load_scenario() {
     let mut file_3 = File::create(dummy_file_3.clone()).unwrap();
     write!(file_3, "{}", make_frame("dummy_3", 0.0, 0.0, 1.0)).unwrap();
 
-    let mut list = crate::list_frames_in_dir(&format!("{}", dir.path().as_os_str().to_str().unwrap()), "some_node").await.unwrap();
+    let mut list = crate::list_frames_in_dir(
+        &format!("{}", dir.path().as_os_str().to_str().unwrap()),
+        "some_node",
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         list.sort(),
@@ -139,7 +147,7 @@ async fn test_load_scenario() {
             },
             // active: Some(true),
             ..Default::default()
-        }
+        },
     );
 
     test_scenario.insert(
@@ -162,7 +170,7 @@ async fn test_load_scenario() {
             },
             // active: Some(true),
             ..Default::default()
-        }
+        },
     );
 
     test_scenario.insert(
@@ -185,12 +193,21 @@ async fn test_load_scenario() {
             },
             // active: Some(true),
             ..Default::default()
-        }
+        },
     );
 
-    assert_eq!(scenario.get("dummy_1").unwrap().clone(), test_scenario.get("dummy_1").unwrap().clone());
-    assert_eq!(scenario.get("dummy_2").unwrap().clone(), test_scenario.get("dummy_2").unwrap().clone());
-    assert_eq!(scenario.get("dummy_3").unwrap().clone(), test_scenario.get("dummy_3").unwrap().clone());
+    assert_eq!(
+        scenario.get("dummy_1").unwrap().clone(),
+        test_scenario.get("dummy_1").unwrap().clone()
+    );
+    assert_eq!(
+        scenario.get("dummy_2").unwrap().clone(),
+        test_scenario.get("dummy_2").unwrap().clone()
+    );
+    assert_eq!(
+        scenario.get("dummy_3").unwrap().clone(),
+        test_scenario.get("dummy_3").unwrap().clone()
+    );
 
     drop(dummy_file_1);
     drop(dummy_file_2);

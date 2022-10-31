@@ -2,12 +2,12 @@ use futures::{stream::Stream, StreamExt};
 use r2r::geometry_msgs::msg::TransformStamped;
 use r2r::scene_manipulation_msgs::msg::{TFExtra, TFExtraData};
 use r2r::std_msgs::msg::Header;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use crate::ExtraData;
 use crate::common::frame_data::FrameData;
+use crate::ExtraData;
 
 pub async fn extra_frame_broadcaster_callback(
     publisher: r2r::Publisher<TFExtra>,
@@ -41,28 +41,29 @@ pub async fn extra_frame_broadcaster_callback(
                     child_frame_id: v.child_frame_id.clone(),
                     transform: v.transform.clone(),
                 },
-                extra: serde_json::Value::Object(serde_json::Map::<String, Value>::new()).to_string() // fix this
-                // {
-                //     let mut extra_map = serde_json::Map::<String, Value>::new();
-                //     extra_map.insert(
-                //         "frame_type".to_string(),
-                //         Value::from(v.extra_data.clone().unwrap().frame_type.clone().unwrap_or_default()),
-                //     );
-                //     extra_map.insert("zone".to_string(), Value::from(v.extra_data.clone().unwrap().zone.unwrap_or_default()));
-                //     extra_map.insert(
-                //         "next".to_string(),
-                //         Value::from(
-                //             v.extra_data.clone().unwrap().next
-                //                 .clone()
-                //                 .unwrap_or_default()
-                //                 .iter()
-                //                 .map(|value| value.clone())
-                //                 .collect::<Vec<String>>(),
-                //         ),
-                //     );
-                //     // println!("map: {:?}", extra_map);
-                //     serde_json::Value::Object(extra_map).to_string()
-                // },
+                extra: serde_json::Value::Object(serde_json::Map::<String, Value>::new())
+                    .to_string(), // fix this
+                                  // {
+                                  //     let mut extra_map = serde_json::Map::<String, Value>::new();
+                                  //     extra_map.insert(
+                                  //         "frame_type".to_string(),
+                                  //         Value::from(v.extra_data.clone().unwrap().frame_type.clone().unwrap_or_default()),
+                                  //     );
+                                  //     extra_map.insert("zone".to_string(), Value::from(v.extra_data.clone().unwrap().zone.unwrap_or_default()));
+                                  //     extra_map.insert(
+                                  //         "next".to_string(),
+                                  //         Value::from(
+                                  //             v.extra_data.clone().unwrap().next
+                                  //                 .clone()
+                                  //                 .unwrap_or_default()
+                                  //                 .iter()
+                                  //                 .map(|value| value.clone())
+                                  //                 .collect::<Vec<String>>(),
+                                  //         ),
+                                  //     );
+                                  //     // println!("map: {:?}", extra_map);
+                                  //     serde_json::Value::Object(extra_map).to_string()
+                                  // },
             });
         });
 

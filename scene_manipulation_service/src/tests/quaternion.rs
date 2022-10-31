@@ -1,7 +1,7 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
-use r2r::geometry_msgs::msg::Quaternion;
 use glam::Quat;
+use r2r::geometry_msgs::msg::Quaternion;
 
 #[tokio::test]
 async fn test_glam_mul() {

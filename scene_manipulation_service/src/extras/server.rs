@@ -99,7 +99,7 @@ pub async fn set_zone(
                         next: frame.extra_data.next.clone(),
                         frame_type: frame.extra_data.frame_type.clone(),
                         ..Default::default()
-                    }
+                    },
                 },
             );
             *broadcasted_frames.lock().unwrap() = local_broadcasted_frames_clone;

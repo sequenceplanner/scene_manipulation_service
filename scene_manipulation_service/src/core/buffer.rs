@@ -9,7 +9,7 @@ use r2r::{
     std_msgs::msg::Header, tf2_msgs::msg::TFMessage, ServiceRequest,
 };
 
-use crate::{lookup_transform, FrameData, ExtraData};
+use crate::{lookup_transform, ExtraData, FrameData};
 
 pub async fn get_all_transforms_server(
     mut service: impl Stream<Item = ServiceRequest<GetAllTransforms::Service>> + Unpin,
@@ -84,19 +84,21 @@ pub async fn static_frame_broadcaster_callback(
         let transforms_local = frames.lock().unwrap().clone();
         let mut updated_transforms = vec![];
 
-        transforms_local.iter().for_each(|(_, v)| match v.extra_data.active {
-            Some(false) => {
-                updated_transforms.push(TransformStamped {
-                    header: Header {
-                        stamp: time_stamp.clone(),
-                        frame_id: v.parent_frame_id.clone(),
-                    },
-                    child_frame_id: v.child_frame_id.clone(),
-                    transform: v.transform.clone(),
-                });
-            }
-            Some(true) | None => (),
-        });
+        transforms_local
+            .iter()
+            .for_each(|(_, v)| match v.extra_data.active {
+                Some(false) => {
+                    updated_transforms.push(TransformStamped {
+                        header: Header {
+                            stamp: time_stamp.clone(),
+                            frame_id: v.parent_frame_id.clone(),
+                        },
+                        child_frame_id: v.child_frame_id.clone(),
+                        transform: v.transform.clone(),
+                    });
+                }
+                Some(true) | None => (),
+            });
 
         let msg = TFMessage {
             transforms: updated_transforms,
@@ -131,19 +133,21 @@ pub async fn active_frame_broadcaster_callback(
         let transforms_local = frames.lock().unwrap().clone();
         let mut updated_transforms = vec![];
 
-        transforms_local.iter().for_each(|(_, v)| match v.extra_data.active {
-            Some(true) | None => {
-                updated_transforms.push(TransformStamped {
-                    header: Header {
-                        stamp: time_stamp.clone(),
-                        frame_id: v.parent_frame_id.clone(),
-                    },
-                    child_frame_id: v.child_frame_id.clone(),
-                    transform: v.transform.clone(),
-                });
-            }
-            Some(false) => (),
-        });
+        transforms_local
+            .iter()
+            .for_each(|(_, v)| match v.extra_data.active {
+                Some(true) | None => {
+                    updated_transforms.push(TransformStamped {
+                        header: Header {
+                            stamp: time_stamp.clone(),
+                            frame_id: v.parent_frame_id.clone(),
+                        },
+                        child_frame_id: v.child_frame_id.clone(),
+                        transform: v.transform.clone(),
+                    });
+                }
+                Some(false) => (),
+            });
 
         let msg = TFMessage {
             transforms: updated_transforms,
@@ -185,7 +189,7 @@ pub async fn active_tf_listener_callback(
                                 active: Some(true),
                                 time_stamp: Some(t.header.stamp.clone()),
                                 ..Default::default()
-                            }
+                            },
                         },
                     );
                 });
@@ -220,7 +224,7 @@ pub async fn static_tf_listener_callback(
                                 active: Some(false),
                                 time_stamp: Some(t.header.stamp.clone()),
                                 ..Default::default()
-                            }
+                            },
                         },
                     );
                 });

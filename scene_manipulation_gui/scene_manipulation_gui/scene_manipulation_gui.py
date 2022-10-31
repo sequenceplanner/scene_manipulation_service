@@ -159,6 +159,7 @@ class Ros2Node(Node, Callbacks):
         self.sms_request.parent_frame_id = parent
         self.sms_request.new_frame_id = new_id
         self.sms_request.transform = transform
+        self.persist = Callbacks.persist
         self.sms_future = self.sms_client.call_async(self.sms_request)
         while True:
             if self.sms_future.done():
@@ -225,7 +226,7 @@ class Ros2Node(Node, Callbacks):
             Callbacks.child,
             Callbacks.parent,
             Callbacks.new_id,
-            Callbacks.transform.transform
+            Callbacks.transform.transform,
         )
         Callbacks.information = str(response.success) + ": " + response.info
 
@@ -303,9 +304,9 @@ If "persist" is not checked, the changes will only affect the current session.""
 
         def persist_box_state_change(checkbox):
             if checkbox.isChecked():
-                Callbacks.persist_checked = True
+                Callbacks.persist = True
             else:
-                Callbacks.persist_checked = False
+                Callbacks.persist = False
 
         def combo_1_box_button_clicked():
             Callbacks.trigger_refresh()
@@ -329,8 +330,8 @@ If "persist" is not checked, the changes will only affect the current session.""
         reparent_button = QPushButton("reparent")
         reparent_button.setToolTip("""Change the parent of the selected child frame to the selected parent frame. 
 The frame will remain in the same position in the world. Note the "persist" checkbox.""")
-        teach_button = QPushButton("teach")
-        teach_button.setToolTip("""Move the selected frame to the position od the teaching marker.""")
+        teach_button = QPushButton("move")
+        teach_button.setToolTip("""Move the selected child frame to the position od the parent frame. Can also be used with the teaching marker.""")
         rename_button = QPushButton("rename")
         rename_button.setToolTip("""Rename the selected frame with the new name from the line edit. Note the "persist" checkbox.""")
         clone_button = QPushButton("clone")
@@ -375,7 +376,7 @@ frame that is currently selected. Note the "persist" checkbox.""")
         def teach_button_clicked():
             Callbacks.child = self.child_select_combo.currentText()
             Callbacks.parent = self.parent_select_combo.currentText()
-            Callbacks.trigger_manipulate_scene("teach")
+            Callbacks.trigger_manipulate_scene("move")
             self.output.append(Callbacks.information)
 
         teach_button.clicked.connect(teach_button_clicked)

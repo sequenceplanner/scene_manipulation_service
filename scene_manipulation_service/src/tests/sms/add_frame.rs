@@ -184,12 +184,19 @@ async fn test_add_frame_and_persist() {
         parent_frame_id: "world".to_string(),
         extra: json!({
             "zone": 1234.1234
-        }).to_string(),
+        })
+        .to_string(),
         persist: true,
         ..Default::default()
     };
     let dir = env::temp_dir();
-    let response = add_frame(&message, &broadcasted_frames, &buffered_frames, dir.to_str().unwrap()).await;
+    let response = add_frame(
+        &message,
+        &broadcasted_frames,
+        &buffered_frames,
+        dir.to_str().unwrap(),
+    )
+    .await;
     assert_eq!(
         response,
         ManipulateScene::Response {
@@ -453,9 +460,7 @@ async fn test_add_frame_with_extras() {
         response,
         ManipulateScene::Response {
             success: true,
-            info:
-                "Frame 'dummy_4' temporarily added to the scene."
-                    .to_string()
+            info: "Frame 'dummy_4' temporarily added to the scene.".to_string()
         }
     );
     {
@@ -464,8 +469,18 @@ async fn test_add_frame_with_extras() {
 
         assert!(broadcasted_local.contains_key("dummy_4"));
         assert!(!buffered_local.contains_key("dummy_4"));
-        assert_eq!(broadcasted_local.get("dummy_4").unwrap().extra_data.zone, Some(32.67));
-        assert_eq!(broadcasted_local.get("dummy_4").unwrap().extra_data.mesh_path, None);
+        assert_eq!(
+            broadcasted_local.get("dummy_4").unwrap().extra_data.zone,
+            Some(32.67)
+        );
+        assert_eq!(
+            broadcasted_local
+                .get("dummy_4")
+                .unwrap()
+                .extra_data
+                .mesh_path,
+            None
+        );
     }
 }
 
@@ -480,7 +495,7 @@ async fn test_add_frame_would_produce_cycle() {
             parent_frame_id: "dummy_4".to_string(),
             child_frame_id: "dummy_5".to_string(),
             ..Default::default()
-        }
+        },
     );
 
     tf_frames.insert(
@@ -489,7 +504,7 @@ async fn test_add_frame_would_produce_cycle() {
             parent_frame_id: "dummy_5".to_string(),
             child_frame_id: "dummy_6".to_string(),
             ..Default::default()
-        }
+        },
     );
 
     let broadcasted_frames = Arc::new(Mutex::new(initial_frames.clone()));
@@ -517,9 +532,7 @@ async fn test_add_frame_would_produce_cycle() {
         response,
         ManipulateScene::Response {
             success: false,
-            info:
-                "Adding frame 'dummy_4' would produce a cycle."
-                    .to_string()
+            info: "Adding frame 'dummy_4' would produce a cycle.".to_string()
         }
     );
     {

@@ -2,6 +2,7 @@
 #![allow(dead_code)]
 
 use futures::{stream::Stream, StreamExt};
+use r2r::geometry_msgs::msg::Vector3;
 use r2r::scene_manipulation_msgs::srv::ManipulateScene;
 use r2r::ServiceRequest;
 use serde_json::json;
@@ -15,6 +16,32 @@ use scene_manipulation_service::{check_would_produce_cycle, lookup_transform, Ex
 
 fn make_initial_setup() -> HashMap<String, FrameData> {
     let mut test_setup = HashMap::<String, FrameData>::new();
+
+    // add the world frame explicitly so that transforms can be looked up to and from it
+    test_setup.insert(
+        "world".to_string(),
+        FrameData {
+            parent_frame_id: "world_origin".to_string(),
+            child_frame_id: "world".to_string(),
+            transform: r2r::geometry_msgs::msg::Transform {
+                translation: r2r::geometry_msgs::msg::Vector3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                rotation: r2r::geometry_msgs::msg::Quaternion {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                    w: 1.0,
+                },
+            },
+            extra_data: ExtraData {
+                active: Some(true),
+                ..Default::default()
+            },
+        },
+    );
 
     test_setup.insert(
         "dummy_1".to_string(),
@@ -35,7 +62,7 @@ fn make_initial_setup() -> HashMap<String, FrameData> {
                 },
             },
             extra_data: ExtraData {
-                zone: Some(123.123), 
+                zone: Some(123.123),
                 active: Some(true),
                 ..Default::default()
             },
@@ -70,7 +97,7 @@ fn make_initial_setup() -> HashMap<String, FrameData> {
     test_setup.insert(
         "dummy_3".to_string(),
         FrameData {
-            parent_frame_id: "world".to_string(),
+            parent_frame_id: "dummy_2".to_string(),
             child_frame_id: "dummy_3".to_string(),
             transform: r2r::geometry_msgs::msg::Transform {
                 translation: r2r::geometry_msgs::msg::Vector3 {
@@ -106,9 +133,7 @@ async fn test_move_frame() {
         command: "move".to_string(),
         child_frame_id: "dummy_1".to_string(),
         parent_frame_id: "dummy_3".to_string(),
-        extra: json!({
-            
-        }).to_string(),
+        extra: json!({}).to_string(),
         ..Default::default()
     };
 
@@ -117,15 +142,18 @@ async fn test_move_frame() {
         response,
         ManipulateScene::Response {
             success: true,
-            info: "Frame 'dummy_1' moved to 'dummy_3'.".to_string()
+            info: "Frame 'dummy_1' temporarily moved to 'dummy_3'.".to_string()
         }
     );
     {
         let broadcasted_local = broadcasted_frames.lock().unwrap().clone();
-        let buffered_local = buffered_frames.lock().unwrap();
 
         assert_eq!(
-            buffered_local.get("dummy_3").unwrap().transform.translation,
+            Vector3 {
+                x: 0.0,
+                y: 1.0,
+                z: 1.0
+            },
             broadcasted_local
                 .get("dummy_1")
                 .unwrap()
@@ -133,11 +161,8 @@ async fn test_move_frame() {
                 .translation
         );
         assert_eq!(
-            broadcasted_local
-                .get("dummy_1")
-                .unwrap()
-                .extra_data
-                .zone, Some(123.123)
+            broadcasted_local.get("dummy_1").unwrap().extra_data.zone,
+            Some(123.123)
         );
     }
 }
@@ -154,9 +179,7 @@ async fn test_move_frame_static() {
         command: "move".to_string(),
         child_frame_id: "dummy_2".to_string(),
         parent_frame_id: "dummy_3".to_string(),
-        extra: json!({
-            
-        }).to_string(),
+        extra: json!({}).to_string(),
         ..Default::default()
     };
 

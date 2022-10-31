@@ -12,8 +12,10 @@ use scene_manipulation_service::{
         files::{list_frames_in_dir, load_scenario, reload_scenario},
         frame_data::FrameData,
     },
-    core::lookup::{check_would_produce_cycle, get_frame_children_ids, is_cyclic, is_cyclic_all,
-        lookup_transform},
+    core::lookup::{
+        check_would_produce_cycle, get_frame_children_ids, is_cyclic, is_cyclic_all,
+        lookup_transform,
+    },
 };
 
 fn world_frame() -> FrameData {
