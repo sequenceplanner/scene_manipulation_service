@@ -41,29 +41,67 @@ pub async fn extra_frame_broadcaster_callback(
                     child_frame_id: v.child_frame_id.clone(),
                     transform: v.transform.clone(),
                 },
-                extra: serde_json::Value::Object(serde_json::Map::<String, Value>::new())
-                    .to_string(), // fix this
-                                  // {
-                                  //     let mut extra_map = serde_json::Map::<String, Value>::new();
-                                  //     extra_map.insert(
-                                  //         "frame_type".to_string(),
-                                  //         Value::from(v.extra_data.clone().unwrap().frame_type.clone().unwrap_or_default()),
-                                  //     );
-                                  //     extra_map.insert("zone".to_string(), Value::from(v.extra_data.clone().unwrap().zone.unwrap_or_default()));
-                                  //     extra_map.insert(
-                                  //         "next".to_string(),
-                                  //         Value::from(
-                                  //             v.extra_data.clone().unwrap().next
-                                  //                 .clone()
-                                  //                 .unwrap_or_default()
-                                  //                 .iter()
-                                  //                 .map(|value| value.clone())
-                                  //                 .collect::<Vec<String>>(),
-                                  //         ),
-                                  //     );
-                                  //     // println!("map: {:?}", extra_map);
-                                  //     serde_json::Value::Object(extra_map).to_string()
-                                  // },
+                extra: {
+                        let mut extra_map = serde_json::Map::<String, Value>::new();
+                        // extra_map.insert(
+                        //     "time_stamp".to_string(),
+                        //     Value::from(v.extra_data.time_stamp.clone().unwrap_or_default()),
+                        // );
+                        extra_map.insert("zone".to_string(), Value::from(v.extra_data.zone.unwrap_or_default()));
+                        extra_map.insert(
+                            "next".to_string(),
+                            Value::from(
+                                v.extra_data.clone().next
+                                    .clone()
+                                    .unwrap_or_default()
+                                    .iter()
+                                    .map(|value| value.clone())
+                                    .collect::<Vec<String>>(),
+                            ),
+                        );
+                        extra_map.insert(
+                            "frame_type".to_string(),
+                            Value::from(v.extra_data.frame_type.clone().unwrap_or_default()),
+                        );
+                        extra_map.insert(
+                            "active".to_string(),
+                            Value::from(v.extra_data.active.clone().unwrap_or_default()),
+                        );
+                        extra_map.insert(
+                            "show_mesh".to_string(),
+                            Value::from(v.extra_data.show_mesh.clone().unwrap_or_default()),
+                        );
+                        extra_map.insert(
+                            "mesh_type".to_string(),
+                            Value::from(v.extra_data.mesh_type.clone().unwrap_or_default()),
+                        );
+                        extra_map.insert(
+                            "mesh_path".to_string(),
+                            Value::from(v.extra_data.mesh_path.clone().unwrap_or_default()),
+                        );
+                        extra_map.insert(
+                            "mesh_scale".to_string(),
+                            Value::from(v.extra_data.mesh_scale.clone().unwrap_or_default()),
+                        );
+                        extra_map.insert(
+                            "mesh_r".to_string(),
+                            Value::from(v.extra_data.mesh_r.clone().unwrap_or_default()),
+                        );
+                        extra_map.insert(
+                            "mesh_g".to_string(),
+                            Value::from(v.extra_data.mesh_g.clone().unwrap_or_default()),
+                        );
+                        extra_map.insert(
+                            "mesh_b".to_string(),
+                            Value::from(v.extra_data.mesh_b.clone().unwrap_or_default()),
+                        );
+                        extra_map.insert(
+                            "mesh_a".to_string(),
+                            Value::from(v.extra_data.mesh_a.clone().unwrap_or_default()),
+                        );
+                        serde_json::Value::Object(extra_map).to_string()
+                    },
+                                  
             });
         });
 

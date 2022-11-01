@@ -2,6 +2,7 @@ use r2r::geometry_msgs::msg::{Quaternion, Transform};
 use r2r::std_msgs::msg::ColorRGBA;
 use r2r::{builtin_interfaces::msg::Time, geometry_msgs::msg::Vector3};
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json, Map};
 use std::collections::HashSet;
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
@@ -24,6 +25,25 @@ pub struct FrameData {
     pub extra_data: ExtraData,
 }
 
+// #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+// pub struct MeshColor {
+//     pub r: f32,
+//     pub g: f32,
+//     pub b: f32,
+//     pub a: f32,
+// }
+
+// // let mut extra_map = serde_json::Map::<String, Value>::new();
+// // serde_json::Value::Object(extra_map).to_string()
+
+// impl From<MeshColor> for Value {
+//     fn from(item: MeshColor) -> Self {
+//         let mut map = serde_json::Map::<String, Value>::new();
+
+//         Value::Object(Map::from([("an", "object")])) //{ value: item }
+//     }
+// }
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct ExtraData {
     pub time_stamp: Option<Time>, // the idea is that all frames should have this, but some don't
@@ -35,7 +55,11 @@ pub struct ExtraData {
     pub mesh_type: Option<i32>, // 1 - cube, 2 - sphere, 3 - cylinder or 10 - mesh (provide path)
     pub mesh_path: Option<String>, // where to find the mesh path if mesh_type was 10
     pub mesh_scale: Option<f32>, // not all meshes are in mm values
-    pub mesh_color: Option<ColorRGBA>, // color for the mesh, A is transparency
+    // pub mesh_color: Option<MeshColor>, // color for the mesh, A is transparency
+    pub mesh_r: Option<f32>,
+    pub mesh_g: Option<f32>,
+    pub mesh_b: Option<f32>,
+    pub mesh_a: Option<f32>,
 }
 
 impl Default for ExtraData {
@@ -50,10 +74,25 @@ impl Default for ExtraData {
             mesh_type: None,
             mesh_path: None,
             mesh_scale: None,
-            mesh_color: None,
+            // mesh_color: None,
+            mesh_r: None,
+            mesh_g: None,
+            mesh_b: None,
+            mesh_a: None,
         }
     }
 }
+
+// impl Default for MeshColor {
+//     fn default() -> Self {
+//         MeshColor {
+//             r: 255.0,
+//             g: 255.0,
+//             b: 255.0,
+//             a: 255.0,
+//         }
+//     }
+// }
 
 impl Default for FrameData {
     fn default() -> Self {

@@ -1,19 +1,15 @@
 use futures::{stream::Stream, StreamExt};
 use r2r::scene_manipulation_msgs::srv::ManipulateScene;
 use r2r::ServiceRequest;
-use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use serde_json::json;
+use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 use crate::common::errors::{main_error_response, main_success_response};
 use crate::common::frame_data::FrameData;
 use crate::{check_would_produce_cycle, lookup_transform, ExtraData};
 
-// A BIG TODO: disable reparenting and cloning if the parent and child is the same, breaks the tree
-// TODO: sort out information in the messages when responding
-// TODO: persist changes!
 pub async fn scene_manipulation_server(
     mut service: impl Stream<Item = ServiceRequest<ManipulateScene::Service>> + Unpin,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -201,7 +197,7 @@ pub async fn add_frame(
                     },
                     true => main_error_response("Frame already exists in the tf, will not proceed to broadcasted locally."),
                 },
-                true => main_error_response(&format!("Frame '{}' is reserved as the universal tree root.", &message.child_frame_id)),
+                true => main_error_response(&format!("Frame '{}' is reserved.", &message.child_frame_id)),
             }
         },
         Err(cause) => main_error_response(&format!(
@@ -295,7 +291,7 @@ pub async fn remove_frame(
                 true => inner(message, broadcasted_frames, buffered_frames, persist_path)
             }
         },
-        true => main_error_response(&format!("Frame '{}' is reserved as the universal tree root.", &message.child_frame_id)),
+        true => main_error_response(&format!("Frame '{}' is reserved.", &message.child_frame_id)),
     }
 }
 
@@ -345,7 +341,12 @@ pub async fn rename_frame(
                             "mesh_type": frame.extra_data.mesh_type,
                             "mesh_path": frame.extra_data.mesh_path,
                             "mesh_scale": frame.extra_data.mesh_scale,
-                            "mesh_color": frame.extra_data.mesh_color
+                            // "mesh_color": frame.extra_data.mesh_color
+                            "mesh_r": frame.extra_data.mesh_r,
+                            "mesh_g": frame.extra_data.mesh_g,
+                            "mesh_b": frame.extra_data.mesh_b,
+                            "mesh_a": frame.extra_data.mesh_a,
+
                         })
                         .to_string(),
                     },
@@ -369,8 +370,6 @@ pub async fn rename_frame(
 }
 
 // Move the child marker to the position of the currently selected parent frame
-// TODO: Have to lookup the parent frame in the world first!
-// TODO: This is the same as the teach frame, just inverted, so have both in one
 pub async fn move_frame(
     message: &r2r::scene_manipulation_msgs::srv::ManipulateScene::Request,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
@@ -445,7 +444,7 @@ pub async fn move_frame(
         }
     }
 
-    match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" { // || &message.child_frame_id == "teaching_marker" {
+    match &message.child_frame_id == "world" || &message.child_frame_id == "world_origin" {
         false => match local_buffered_frames.contains_key(&message.child_frame_id) {
             false => match local_broadcasted_frames.contains_key(&message.child_frame_id) {
                 false => main_error_response("Frame doesn't exist."),
@@ -462,7 +461,7 @@ pub async fn move_frame(
                 true => inner(&message, &broadcasted_frames, &buffered_frames, &persist_path).await
             }
         },
-        true => main_error_response(&format!("Frame '{}' is reserved as the universal tree root.", &message.child_frame_id))
+        true => main_error_response(&format!("Frame '{}' is reserved.", &message.child_frame_id)),
     }
 }
 
@@ -564,7 +563,7 @@ pub async fn reparent_frame(
                     true => inner(&message, &broadcasted_frames, &buffered_frames).await
                 }
             },
-            true => main_error_response("Frame 'world' is reserved as the universal tree root."),        
+            true => main_error_response(&format!("Frame '{}' is reserved.", &message.child_frame_id)),
         }
     }
 }

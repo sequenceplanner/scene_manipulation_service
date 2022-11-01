@@ -109,7 +109,7 @@ class SceneManipulationMarker(Node):
         int_marker.pose.orientation.y = initial_pose.transform.rotation.y
         int_marker.pose.orientation.z = initial_pose.transform.rotation.z
         int_marker.pose.orientation.w = initial_pose.transform.rotation.w
-        int_marker.scale = 1.5 #self.marker_scale
+        int_marker.scale = 0.3 # 1.5 #self.marker_scale
         int_marker.name = "teaching_marker"
         int_marker.description = "teaching_marker"
 
