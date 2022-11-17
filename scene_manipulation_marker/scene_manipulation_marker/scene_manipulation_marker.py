@@ -23,8 +23,8 @@ class SceneManipulationMarker(Node):
         self.initial_marker_pose = TransformStamped()
         self.initial_marker_pose.child_frame_id = "teaching_marker"
         self.initial_marker_pose.header.frame_id = "world"
-        self.initial_marker_pose.transform.translation.x = 1.0
-        self.initial_marker_pose.transform.translation.y = 1.0
+        self.initial_marker_pose.transform.translation.x = 0.0
+        self.initial_marker_pose.transform.translation.y = 2.0
         self.initial_marker_pose.transform.translation.z = 0.0
         self.initial_marker_pose.transform.rotation.x = 0.0
         self.initial_marker_pose.transform.rotation.y = 0.0

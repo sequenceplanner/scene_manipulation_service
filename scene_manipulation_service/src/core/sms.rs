@@ -484,9 +484,9 @@ pub async fn reparent_frame(
         let local_broadcasted_frames = broadcasted_frames.lock().unwrap().clone();
         let mut local_broadcasted_frames_clone = local_broadcasted_frames.clone();
 
-        let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
-        let now = clock.get_now().unwrap();
-        let time_stamp = r2r::Clock::to_builtin_time(&now);
+        // let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
+        // let now = clock.get_now().unwrap();
+        // let time_stamp = r2r::Clock::to_builtin_time(&now);
 
         match check_would_produce_cycle(
             &FrameData {
@@ -514,20 +514,13 @@ pub async fn reparent_frame(
                                     parent_frame_id: message.parent_frame_id.clone(),
                                     child_frame_id: message.child_frame_id.clone(),
                                     transform,
-                                    extra_data: ExtraData {
-                                        active: Some(true),
-                                        time_stamp: Some(time_stamp),
-                                        zone: frame.extra_data.zone.clone(),
-                                        next: frame.extra_data.next.clone(),
-                                        frame_type: frame.extra_data.frame_type.clone(),
-                                        ..Default::default()
-                                    },
+                                    extra_data: frame.extra_data.clone()
                                 },
                             );
                             *broadcasted_frames.lock().unwrap() = local_broadcasted_frames_clone;
                             main_success_response(&format!(
-                                "Frame '{}' added to the scene.",
-                                message.child_frame_id
+                                "Frame '{}' reparented to '{}'.",
+                                message.child_frame_id, message.parent_frame_id
                             ))
                         }
                         None => main_error_response(&format!(
