@@ -605,15 +605,15 @@ async fn clone_frame(
             {
                 None => main_error_response("Failed to lookup transform."),
                 Some(transform) => {
-                    match local_broadcasted_frames.get(&message.child_frame_id.clone()) {
-                        Some(frame) => {
+                    // match local_broadcasted_frames.get(&message.child_frame_id.clone()) {
+                    //     Some(frame) => {
                             local_broadcasted_frames_clone.insert(
                                 message.new_frame_id.clone(),
                                 FrameData {
                                     parent_frame_id: message.parent_frame_id.clone(),
                                     child_frame_id: message.new_frame_id.clone(),
                                     transform,
-                                    extra_data: frame.extra_data.clone(),
+                                    extra_data: ExtraData {..Default::default()},
                                 },
                             );
                             *broadcasted_frames.lock().unwrap() = local_broadcasted_frames_clone;
@@ -622,12 +622,12 @@ async fn clone_frame(
                                 message.child_frame_id, message.new_frame_id
                             ))
                         }
-                        None => main_error_response(&format!(
-                            "Frame '{}' in the tf buffer, but not in broadcaster, investigate.'",
-                            &message.child_frame_id
-                        )),
-                    }
-                }
+                        // None => main_error_response(&format!(
+                        //     "Frame '{}' in the tf buffer, but not in broadcaster, investigate.'",
+                        //     &message.child_frame_id
+                        // )),
+                    // }
+                // }
             },
             (true, cause) => main_error_response(&format!(
                 "Adding frame '{}' would produce a cycle. Not added, cause: '{}'",
