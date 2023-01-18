@@ -23,7 +23,7 @@ r2r_cargo(rcl                       # mandatory
 
 # install binaries
 install(PROGRAMS
-  ${CMAKE_SOURCE_DIR}/target/release/sms
+  ${CMAKE_SOURCE_DIR}/target/colcon/sms
   DESTINATION lib/${PROJECT_NAME}
 )
 
