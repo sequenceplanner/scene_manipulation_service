@@ -15,6 +15,7 @@ pub async fn extra_frame_broadcaster_callback(
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     broadcasted_frames: &Arc<Mutex<HashMap<String, FrameData>>>,
     node_id: &str,
+    mesh_path_prefix: Option<String>
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let mut clock = r2r::Clock::create(r2r::ClockType::RosTime).unwrap();
@@ -75,9 +76,16 @@ pub async fn extra_frame_broadcaster_callback(
                             "mesh_type".to_string(),
                             Value::from(v.extra_data.mesh_type.clone().unwrap_or_default()),
                         );
+                        let mesh_path = if let Some(mesh_path_prefix) = mesh_path_prefix.as_ref() {
+                            if let Some(mp) = v.extra_data.mesh_path.clone() {
+                                format!("{mesh_path_prefix}/{mp}")
+                            } else {
+                                "".into()
+                            }
+                        } else { v.extra_data.mesh_path.clone().unwrap_or_default() };
                         extra_map.insert(
                             "mesh_path".to_string(),
-                            Value::from(v.extra_data.mesh_path.clone().unwrap_or_default()),
+                            Value::from(mesh_path),
                         );
                         extra_map.insert(
                             "mesh_scale".to_string(),
@@ -101,7 +109,7 @@ pub async fn extra_frame_broadcaster_callback(
                         );
                         serde_json::Value::Object(extra_map).to_string()
                     },
-                                  
+
             });
         });
 

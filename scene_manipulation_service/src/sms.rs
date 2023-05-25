@@ -43,6 +43,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let params = node.params.clone();
     let params_things = params.lock().unwrap(); // OK to panic
     let scenario_path = params_things.get("scenario_path");
+    let mesh_path = params_things.get("mesh_path").and_then(|mp| {
+        if let ParameterValue::String(s) = mp {
+            Some(s.to_owned())
+        } else {
+            None
+        }
+    });
 
     let path_param = match scenario_path {
         Some(p) => match p {
@@ -201,6 +208,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             &buffered_frames_clone,
             &broadcasted_frames_clone,
             NODE_ID,
+            mesh_path,
         )
         .await
         {
