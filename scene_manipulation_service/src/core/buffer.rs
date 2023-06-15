@@ -5,11 +5,49 @@ use std::{
 
 use futures::{Stream, StreamExt};
 use r2r::{
-    geometry_msgs::msg::TransformStamped, scene_manipulation_msgs::srv::GetAllTransforms,
+    geometry_msgs::msg::TransformStamped, scene_manipulation_msgs::srv::*,
     std_msgs::msg::Header, tf2_msgs::msg::TFMessage, ServiceRequest,
 };
 
 use crate::{lookup_transform, ExtraData, FrameData};
+
+pub async fn get_extra_server(
+    mut service: impl Stream<Item = ServiceRequest<GetExtra::Service>> + Unpin,
+    frames: &Arc<Mutex<HashMap<String, FrameData>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    loop {
+        match service.next().await {
+            Some(request) => {
+                let frames_local = frames.lock().unwrap().clone();
+                let response = match frames_local.get(&request.message.frame_id) {
+                    Some(frame) => {
+                        if let Ok(s) = serde_json::to_string_pretty(&frame.extra_data) {
+                            GetExtra::Response {
+                                success: true,
+                                extra: s
+                            }
+                        } else {
+                            GetExtra::Response {
+                                success: false,
+                                extra: "Could not create json".into()
+                            }
+                        }
+                    },
+                    None => {
+                        GetExtra::Response {
+                            success: false,
+                            extra: "no such frame".to_string(),
+                        }
+                    }
+                };
+                request
+                    .respond(response)
+                    .expect("Could not send service response.");
+            }
+            None => {}
+        }
+    }
+}
 
 pub async fn get_all_transforms_server(
     mut service: impl Stream<Item = ServiceRequest<GetAllTransforms::Service>> + Unpin,
@@ -169,6 +207,7 @@ pub async fn active_frame_broadcaster_callback(
 
 // updates the buffer with active frames from the tf topic
 // TODO: if a stale active frame is on the tf for some reason, don't include it
+// TODO: active frames should be merged with extra data from broadcaster.
 pub async fn active_tf_listener_callback(
     mut subscriber: impl Stream<Item = TFMessage> + Unpin,
     buffered_frames: &Arc<Mutex<HashMap<String, FrameData>>>,

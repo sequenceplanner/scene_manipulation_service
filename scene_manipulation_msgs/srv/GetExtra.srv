@@ -1,0 +1,8 @@
+# Request
+string frame_id
+
+---
+
+# Reply
+bool success
+string extra

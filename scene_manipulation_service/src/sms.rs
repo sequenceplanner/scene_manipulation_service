@@ -1,14 +1,12 @@
 use r2r::scene_manipulation_msgs::msg::TFExtra;
-use r2r::scene_manipulation_msgs::srv::{
-    GetAllTransforms, LookupTransform, ManipulateExtras, ManipulateScene,
-};
+use r2r::scene_manipulation_msgs::srv::*;
 use r2r::tf2_msgs::msg::TFMessage;
 use r2r::{ParameterValue, QosProfile};
 use scene_manipulation_service::core::sms::scene_manipulation_server;
 use scene_manipulation_service::{
     active_frame_broadcaster_callback, active_tf_listener_callback, extra_features_server,
     extra_frame_broadcaster_callback, get_all_transforms_server, static_frame_broadcaster_callback,
-    static_tf_listener_callback, transform_lookup_server,
+    static_tf_listener_callback, transform_lookup_server, get_extra_server
 };
 use std::collections::HashMap;
 use std::error::Error;
@@ -263,6 +261,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let result =
             get_all_transforms_server(get_all_transforms_service, &buffered_frames_clone.clone())
                 .await;
+        match result {
+            Ok(()) => r2r::log_info!(NODE_ID, "Get All Frames Service call succeeded."),
+            Err(e) => r2r::log_error!(NODE_ID, "Get All Frames Service call failed with: {}.", e),
+        };
+    });
+
+    let get_extra_service =
+        node.create_service::<GetExtra::Service>("get_extra")?;
+    let frames_clone = broadcasted_frames.clone();
+    tokio::task::spawn(async move {
+        let result =
+            get_extra_server(get_extra_service, &frames_clone.clone()).await;
         match result {
             Ok(()) => r2r::log_info!(NODE_ID, "Get All Frames Service call succeeded."),
             Err(e) => r2r::log_error!(NODE_ID, "Get All Frames Service call failed with: {}.", e),

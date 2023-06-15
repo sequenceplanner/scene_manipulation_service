@@ -28,6 +28,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/LookupTransform.srv"
   "srv/GetAllTransforms.srv"
   "srv/ManipulateExtras.srv"
+  "srv/GetExtra.srv"
   "msg/TFExtra.msg"
   "msg/TFExtraData.msg"
   DEPENDENCIES

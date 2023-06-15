@@ -1,6 +1,7 @@
-use r2r::geometry_msgs::msg::{Quaternion, Transform};
+use r2r::geometry_msgs::msg::{Vector3, Quaternion, Transform};
 use r2r::std_msgs::msg::ColorRGBA;
-use r2r::{builtin_interfaces::msg::Time, geometry_msgs::msg::Vector3};
+use r2r::builtin_interfaces::msg::Time;
+use r2r::sensor_msgs::msg::JointState;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json, Map};
 use std::collections::HashSet;
@@ -60,6 +61,7 @@ pub struct ExtraData {
     pub mesh_g: Option<f32>,
     pub mesh_b: Option<f32>,
     pub mesh_a: Option<f32>,
+    pub preferred_joint_configuration: Option<Vec<f32>>,
 }
 
 impl Default for ExtraData {
@@ -79,6 +81,7 @@ impl Default for ExtraData {
             mesh_g: None,
             mesh_b: None,
             mesh_a: None,
+            preferred_joint_configuration: None,
         }
     }
 }

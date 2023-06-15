@@ -38,7 +38,7 @@ class Callbacks:
     trigger_query = None
     trigger_get_all = None
     trigger_manipulate_scene = None
-    trigger_manipulate_extra_features = None    
+    trigger_manipulate_extra_features = None
 
 class Ros2Node(Node, Callbacks):
     def __init__(self):
@@ -140,14 +140,14 @@ class Ros2Node(Node, Callbacks):
                 + f'            "w": {Callbacks.transform.transform.rotation.w}\n'
                 + "        }\n"
                 + "    },\n"
-                + '    "preferred_joint_configuration": {\n'
-                + f'        "j0": {Callbacks.joints.position[0]},\n'
-                + f'        "j1": {Callbacks.joints.position[1]},\n'
-                + f'        "j2": {Callbacks.joints.position[2]},\n'
-                + f'        "j3": {Callbacks.joints.position[3]},\n'
-                + f'        "j4": {Callbacks.joints.position[4]},\n'
-                + f'        "j5": {Callbacks.joints.position[5]}\n'
-                + "    }\n"
+                + '    "preferred_joint_configuration": [\n'
+                + f'        {Callbacks.joints.position[0]},\n'
+                + f'        {Callbacks.joints.position[1]},\n'
+                + f'        {Callbacks.joints.position[2]},\n'
+                + f'        {Callbacks.joints.position[3]},\n'
+                + f'        {Callbacks.joints.position[4]},\n'
+                + f'        {Callbacks.joints.position[5]}\n'
+                + "    ]\n"
                 + "}\n"
             )
         else:
@@ -268,7 +268,7 @@ class Window(QWidget, Callbacks):
         self.child_select_combo = QComboBox()
         self.child_select_combo.setMinimumWidth(360)
         self.child_select_combo.setToolTip("""Select a child frame to manipulate or use it to change the scene.""")
-        
+
 
         combo_2_box_label = QLabel("parent")
         combo_2_box_label.setToolTip("""Select a parent frame in which the selected child frame will be looked up, reparented, etc.""")
@@ -282,7 +282,7 @@ class Window(QWidget, Callbacks):
         self.persist = QCheckBox("persist")
         self.persist.setChecked(False)
         self.persist.stateChanged.connect(lambda: persist_box_state_change(self.persist))
-        self.persist.setToolTip("""Checking "persist" enables you to permanently save changes made while the box is checked. 
+        self.persist.setToolTip("""Checking "persist" enables you to permanently save changes made while the box is checked.
 If "persist" is not checked, the changes will only affect the current session.""")
 
         info = QLabel("")
@@ -328,15 +328,15 @@ If "persist" is not checked, the changes will only affect the current session.""
         remove_button = QPushButton("remove")
         remove_button.setToolTip("""Remove the selected child frame from the scene. Note the "persist" checkbox.""")
         reparent_button = QPushButton("reparent")
-        reparent_button.setToolTip("""Change the parent of the selected child frame to the selected parent frame. 
+        reparent_button.setToolTip("""Change the parent of the selected child frame to the selected parent frame.
 The frame will remain in the same position in the world. Note the "persist" checkbox.""")
         teach_button = QPushButton("move")
         teach_button.setToolTip("""Move the selected child frame to the position od the parent frame. Can also be used with the teaching marker.""")
         rename_button = QPushButton("rename")
         rename_button.setToolTip("""Rename the selected frame with the new name from the line edit. Note the "persist" checkbox.""")
         clone_button = QPushButton("clone")
-        clone_button.setToolTip("""Clone the selected frame with the new name provided in the line edit. 
-The clone will spawn at the position where its original is, parented in the parent 
+        clone_button.setToolTip("""Clone the selected frame with the new name provided in the line edit.
+The clone will spawn at the position where its original is, parented in the parent
 frame that is currently selected. Note the "persist" checkbox.""")
         new_id_line_edit = QLineEdit("")
         new_id_line_edit.setToolTip("""Put a new frame id here, or the name for the clone to be spawned.""")
@@ -405,16 +405,16 @@ frame that is currently selected. Note the "persist" checkbox.""")
         combo_box_layout = QGridLayout()
 
         enable_path_button = QPushButton("enable path")
-        enable_path_button.setToolTip("""Enable the path from the selected parent to the 
+        enable_path_button.setToolTip("""Enable the path from the selected parent to the
 selected child frame. Note the "persist" checkbox.""")
         disable_path_button = QPushButton("disable path")
-        disable_path_button.setToolTip("""Disable the path from the selected parent to the 
+        disable_path_button.setToolTip("""Disable the path from the selected parent to the
 selected child frame. Note the "persist" checkbox.""")
 
         set_zone_button = QPushButton("set zone")
         set_zone_button.setToolTip("""Set the "zone" of the selected frame using the line edit
 on the left. Note the "persist" checkbox.""")
-        
+
         reload_button = QPushButton("reload")
         reload_button.setToolTip("""Reload the scene from the scenario folder specified with its path in the line edit.""")
         zone_line_edit = QLineEdit(Callbacks.zone)
@@ -432,7 +432,7 @@ on the left. Note the "persist" checkbox.""")
         combo_box_layout.addWidget(scenario_path_line_edit, 1, 0, 1, 4)
         combo_box_layout.addWidget(reload_button, 1, 4, 1, 1)
         combo_box_layout.addWidget(get_all_button, 1, 5, 1, 1)
-        
+
         combo_box.setLayout(combo_box_layout)
 
         def set_zone_button_clicked():
@@ -494,7 +494,7 @@ on the left. Note the "persist" checkbox.""")
         combo_box_layout.addWidget(set_size_button, 0, 1, 1, 1)
         combo_box_layout.addWidget(move_button, 0, 2, 1, 1)
         combo_box_layout.addWidget(reset_button, 0, 3, 1, 1)
-        
+
         combo_box.setLayout(combo_box_layout)
 
         def resize_marker_button_clicked():
