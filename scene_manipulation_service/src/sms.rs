@@ -42,7 +42,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let params_things = params.lock().unwrap(); // OK to panic
     let scenario_path = params_things.get("scenario_path");
     let mesh_path = params_things.get("mesh_path").and_then(|mp| {
-        if let ParameterValue::String(s) = mp {
+        if let ParameterValue::String(s) = &mp.value {
             Some(s.to_owned())
         } else {
             None
@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     });
 
     let path_param = match scenario_path {
-        Some(p) => match p {
+        Some(p) => match &p.value {
             ParameterValue::String(path_param) => path_param.clone(),
             _ => {
                 r2r::log_warn!(

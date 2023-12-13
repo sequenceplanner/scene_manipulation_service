@@ -9,7 +9,7 @@ autotests = false
 inherits = "release"
 
 [dependencies]
-r2r = "0.6.5"
+r2r = "0.8.2"
 futures = "0.3.15"
 tokio = { version = "1", features = ["full"] }
 serde = "1.0.144"
