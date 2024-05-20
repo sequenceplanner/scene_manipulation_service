@@ -217,7 +217,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // offer the scene manipulation service
     let scene_manipulation_service =
-        node.create_service::<ManipulateScene::Service>("manipulate_scene")?;
+        node.create_service::<ManipulateScene::Service>("manipulate_scene", QosProfile::default())?;
     let broadcasted_frames_clone = broadcasted_frames.clone();
     let buffered_frames_clone = buffered_frames.clone();
     tokio::task::spawn(async move {
@@ -241,7 +241,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // offer the transform lookup service
     let transform_lookup_service =
-        node.create_service::<LookupTransform::Service>("lookup_transform")?;
+        node.create_service::<LookupTransform::Service>("lookup_transform", QosProfile::default())?;
     let buffered_frames_clone = buffered_frames.clone();
     tokio::task::spawn(async move {
         let result =
@@ -255,7 +255,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // offer a service to get all frames from tf (local buffer)
     let get_all_transforms_service =
-        node.create_service::<GetAllTransforms::Service>("get_all_transforms")?;
+        node.create_service::<GetAllTransforms::Service>("get_all_transforms", QosProfile::default())?;
     let buffered_frames_clone = buffered_frames.clone();
     tokio::task::spawn(async move {
         let result =
@@ -268,7 +268,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     });
 
     let get_extra_service =
-        node.create_service::<GetExtra::Service>("get_extra")?;
+        node.create_service::<GetExtra::Service>("get_extra", QosProfile::default())?;
     let frames_clone = broadcasted_frames.clone();
     tokio::task::spawn(async move {
         let result =
@@ -299,7 +299,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // this can remain here since it is connected to the GUI
     // offer a service for extra features, like the teaching marker, zones, paths, etc.
     let extra_features_service =
-        node.create_service::<ManipulateExtras::Service>("extra_features")?;
+        node.create_service::<ManipulateExtras::Service>("extra_features", QosProfile::default())?;
     let broadcasted_frames_clone = broadcasted_frames.clone();
     tokio::task::spawn(async move {
         let result =
